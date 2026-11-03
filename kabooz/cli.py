@@ -583,6 +583,17 @@ def album(
         + (f", [red]{len(result.failed)} failed[/red]" if result.failed else "") + "."
     )
 
+    if result.mb_attempted > 0 and result.mb_succeeded == 0:
+        err_console.print(
+            f"\n[yellow]MusicBrainz returned no data for all "
+            f"{result.mb_attempted} track(s).[/yellow] "
+            "Two common causes:\n"
+            "  [dim]·[/dim] Network blocks access to musicbrainz.org "
+            "Test with:\n"
+            "    [dim]curl -v 'https://musicbrainz.org/ws/2/isrc/TEST?fmt=json'[/dim]\n"
+            "  [dim]·[/dim] The ISRCs are not in MusicBrainz's database "
+            "(common for older and classical recordings)."
+        )
 
 # ══════════════════════════════════════════════════════════════════════════
 # Metadata and goodies

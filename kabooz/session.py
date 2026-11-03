@@ -126,12 +126,13 @@ class TrackDownloadResult:
 
 @dataclass
 class AlbumDownloadResult:
-    album:          Album
-    tracks:         list[TrackDownloadResult] = field(default_factory=list)
-    failed:         list[str] = field(default_factory=list)
-    goodies_ok:     int = 0
+    album: Album
+    tracks: list[TrackDownloadResult] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    goodies_ok: int = 0
     goodies_failed: int = 0
-
+    mb_attempted: int = 0
+    mb_succeeded: int = 0
     @property
     def succeeded(self) -> int:
         return sum(1 for r in self.tracks if not r.download.skipped)
@@ -930,10 +931,14 @@ class QobuzSession:
                     embed_cover=embed_cover,
                     fetch_lyrics_flag=fetch_lyrics_flag,
                     save_cover_file=save_cover_file,
-                )
+)
                 agg.tracks.append(tdr)
-                if on_track_done:
-                    on_track_done(tdr)
+                if cfg.musicbrainz.enabled and track_obj.isrc and not dl_result.dev_stub:
+                    agg.mb_attempted += 1
+                    if tdr.mb_enriched:
+                        agg.mb_succeeded += 1
+            if on_track_done:
+                on_track_done(tdr)
 
             if download_goodies and album_obj.goodies:
                 album_dir = dest

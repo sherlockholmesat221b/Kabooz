@@ -84,6 +84,11 @@ fetch_lyrics = false
 # Makes one extra HTTP request per track when enabled.
 enabled = false
 
+# Note: requires direct HTTPS access to musicbrainz.org. Some carriers
+# block it at the TLS layer, in which case enrichment silently fails.
+# Test with:
+#   curl -v "https://musicbrainz.org/ws/2/isrc/TEST_ISRC?fmt=json"
+
 
 [naming]
 # Naming templates control where downloaded files are placed and what

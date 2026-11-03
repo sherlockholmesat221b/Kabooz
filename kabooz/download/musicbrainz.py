@@ -33,8 +33,7 @@ class _RateLimiter:
 
 _limiter = _RateLimiter()
 _MB_BASE    = "https://musicbrainz.org/ws/2"
-_USER_AGENT = "kabooz/0.1 ( https://gitlab.com/kabooz )"
-
+_USER_AGENT = "Kabooz/0.1.0 ( https://github.com/sherlockholmesat221b/Kabooz )"
 
 def lookup_isrc(isrc: str, http_client: Optional[httpx.Client] = None) -> MBResult:
     from ..dev import dev_log
