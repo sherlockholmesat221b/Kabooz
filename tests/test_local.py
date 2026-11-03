@@ -280,12 +280,12 @@ def test_save_and_load_playlist(tmp_path):
 
 
 def test_load_playlist_magic_comment_stripped(tmp_path):
-    """Files with the # qobuz-playlist v1 header parse correctly."""
+    """Files with the # kabooz-playlist v1 header parse correctly."""
     pl = make_lpl()
     path = tmp_path / "pl.toml"
     save_playlist(pl, path)
     text = path.read_text()
-    assert text.startswith("# qobuz-playlist v1")
+    assert text.startswith("# kabooz-playlist v1")
     # Still loads correctly.
     loaded = load_playlist(path)
     assert loaded.track_count == 2
