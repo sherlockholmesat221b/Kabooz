@@ -126,6 +126,7 @@ class Downloader:
         read_timeout: float = 300.0,
         connect_timeout: float = 10.0,
         max_workers: int = 1,
+        max_retries: int = 2,
         external_downloader: str = "",
         naming_template: Optional[str] = None,
         dev: bool = False,
@@ -134,6 +135,7 @@ class Downloader:
         self._read_timeout        = read_timeout
         self._connect_timeout     = connect_timeout
         self._max_workers         = max(1, max_workers)
+        self._max_retries         = max(0, max_retries)
         self._external_downloader = external_downloader.strip()
         self._naming_template     = naming_template
         self._dev                 = dev
@@ -433,13 +435,12 @@ class Downloader:
                 path=path, bytes_written=0, total_bytes=size, skipped=True,
             )
 
-        part_path  = Path(str(path) + ".part")
-        total      = self._head(url)
-        part_size  = part_path.stat().st_size if part_path.exists() else 0
+        part_path = Path(str(path) + ".part")
+        total     = self._head(url)
+        part_size = part_path.stat().st_size if part_path.exists() else 0
 
-        # .part is complete — bytes done but tagging must have failed last run.
-        # Return it so session can re-run the tagging pipeline without
-        # re-downloading anything.
+        # .part complete but tagging must have failed last run — return it
+        # so session._post_download re-runs the pipeline without re-downloading.
         if total > 0 and part_size >= total:
             dev_log(f"part complete, re-tagging → {part_path.name}")
             if on_progress:
@@ -451,7 +452,24 @@ class Downloader:
                 resumed=False,
             )
 
-        # Resume from existing partial bytes.
+
+        # ── NEW: retry wrapper ─────────────────────────────────
+        for attempt in range(self._max_retries + 1):
+            try:
+                return self._stream_to_part(url, part_path, total, on_progress)
+            except httpx.TransportError as exc:
+                if attempt < self._max_retries:
+                    from ..dev import dev_log
+                    dev_log(f"[yellow]retry {attempt+1}/{self._max_retries}: {exc}[/yellow]")
+                    continue
+                raise
+
+
+    def _stream_to_part(self, url, part_path, total, on_progress):
+        """The streaming loop — extracted from _download_to_path so it
+        can be called repeatedly by the retry wrapper above."""
+        part_size = part_path.stat().st_size if part_path.exists() else 0
+
         resumed = total > 0 and part_size > 0 and part_size < total
         headers = {"Range": f"bytes={part_size}-"} if resumed else {}
         written = 0
@@ -468,10 +486,8 @@ class Downloader:
                         on_progress(part_size + written, total or written)
 
         return DownloadResult(
-            path=part_path,
-            bytes_written=written,
-            total_bytes=total or written,
-            resumed=resumed,
+            path=part_path, bytes_written=written,
+            total_bytes=total or written, resumed=resumed,
         )
 
     def _external_download(
@@ -548,19 +564,10 @@ class Downloader:
             total_bytes=written,
         )
 
-    def _download_goodie_to_path(
-        self,
-        url: str,
-        path: Path,
-        on_progress: Optional[Callable[[int, int], None]],
-    ) -> DownloadResult:
-        """
-        Download a goodie directly to its final path (no .part convention).
-
-        Goodies are not tagged, so there is no ambiguity: if the file
-        exists and is at least as large as Content-Length, it's complete.
-        """
-        total         = self._head(url)
+    def _download_goodie_to_path(self, url, path, on_progress):
+        """Download a goodie directly to its final path (no .part convention),
+        with bounded retry on TransportError."""
+        total = self._head(url)                     # called once
         existing_size = path.stat().st_size if path.exists() else 0
 
         if total > 0 and existing_size >= total:
@@ -569,6 +576,23 @@ class Downloader:
             return DownloadResult(
                 path=path, bytes_written=0, total_bytes=total, skipped=True,
             )
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                return self._stream_goodie(url, path, total, on_progress)
+            except httpx.TransportError as exc:
+                if attempt < self._max_retries:
+                    from ..dev import dev_log
+                    dev_log(f"[yellow]goodie retry {attempt+1}/{self._max_retries}: {exc}[/yellow]")
+                    continue
+                raise
+
+    def _stream_goodie(self, url, path, total, on_progress):
+        """The goodie streaming loop — extracted so the retry wrapper above
+        can call it repeatedly. Reads existing_size fresh from disk each
+        attempt so partial bytes from a prior failed attempt are resumed
+        with a Range header, not re-fetched."""
+        existing_size = path.stat().st_size if path.exists() else 0
 
         resumed = total > 0 and existing_size > 0 and existing_size < total
         headers = {"Range": f"bytes={existing_size}-"} if resumed else {}

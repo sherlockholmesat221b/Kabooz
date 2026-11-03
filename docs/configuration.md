@@ -46,6 +46,12 @@ quality = "hi_res"
 # downloads but increase API and CDN load.
 max_workers = 1
 
+# Number of retry attempts on httpx.TransportError (peer reset,
+# read timeout, connect error) during a track or goodie download.
+# 0 = fail on first error. 2 = two retries (three attempts total).
+# No sleep between retries — immediate, cheap.
+max_retries = 2
+
 # Shell command template for an external downloader (e.g. aria2c).
 # Leave empty to use the built-in httpx downloader.
 # Placeholders: {url} {output} {dir} {filename}

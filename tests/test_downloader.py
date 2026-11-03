@@ -387,3 +387,74 @@ def test_track_all_falls_back_to_track_number_without_album(tmp_path):
         template="{track_all:02d}. {title}",
     )
     assert path.name == "07. Single.flac"
+
+
+@respx.mock
+def test_download_retries_on_remote_protocol_error(tmp_path):
+    """A RemoteProtocolError on attempt 1 is retried; attempt 2 uses
+    the Range header to resume from the bytes already on disk."""
+    dest = tmp_path / "track.flac"
+    part = Path(str(dest) + ".part")
+    part.write_bytes(FAKE_CONTENT[:50])   # pretend 50 bytes already received
+
+    respx.head(FAKE_URL).mock(
+        return_value=httpx.Response(
+            200, headers={"content-length": str(len(FAKE_CONTENT))},
+        )
+    )
+    respx.get(FAKE_URL).mock(
+        side_effect=[
+            httpx.RemoteProtocolError("peer closed"),
+            httpx.Response(
+                206, content=FAKE_CONTENT[50:],
+                headers={"content-length": str(len(FAKE_CONTENT) - 50)},
+            ),
+        ]
+    )
+    downloader = Downloader(max_retries=2)
+    result = downloader._download_to_path(FAKE_URL, dest, None)
+    assert result.path.read_bytes() == FAKE_CONTENT
+    assert result.resumed is True
+
+
+@respx.mock
+def test_goodie_retries_on_remote_protocol_error(tmp_path):
+    """Same retry behaviour for goodies (_download_goodie_to_path)."""
+    dest = tmp_path / "booklet.pdf"
+    dest.write_bytes(FAKE_CONTENT[:50])
+
+    respx.head(FAKE_URL).mock(
+        return_value=httpx.Response(
+            200, headers={"content-length": str(len(FAKE_CONTENT))},
+        )
+    )
+    respx.get(FAKE_URL).mock(
+        side_effect=[
+            httpx.RemoteProtocolError("peer closed"),
+            httpx.Response(
+                206, content=FAKE_CONTENT[50:],
+                headers={"content-length": str(len(FAKE_CONTENT) - 50)},
+            ),
+        ]
+    )
+    downloader = Downloader(max_retries=2)
+    result = downloader._download_goodie_to_path(FAKE_URL, dest, None)
+    assert result.path.read_bytes() == FAKE_CONTENT
+    assert result.resumed is True
+
+
+@respx.mock
+def test_download_gives_up_after_max_retries(tmp_path):
+    """After max_retries is exhausted, the TransportError propagates.
+    Proves the retry loop is bounded — no infinite retry."""
+    dest = tmp_path / "track.flac"
+    respx.head(FAKE_URL).mock(
+        return_value=httpx.Response(
+            200, headers={"content-length": str(len(FAKE_CONTENT))},
+        )
+    )
+    respx.get(FAKE_URL).mock(side_effect=httpx.RemoteProtocolError("always fails"))
+
+    downloader = Downloader(max_retries=2)
+    with pytest.raises(httpx.RemoteProtocolError):
+        downloader._download_to_path(FAKE_URL, dest, None)

@@ -19,6 +19,7 @@ from __future__ import annotations
 import dataclasses
 import threading
 import time
+import httpx
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Generator, Optional
@@ -811,6 +812,7 @@ class QobuzSession:
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
             max_workers=n_work,
+            max_retries=cfg.download.max_retries,
             external_downloader=ext_dl,
             naming_template=tmpl,
             dev=self._dev,
@@ -882,6 +884,7 @@ class QobuzSession:
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
             max_workers=n_work,
+            max_retries=cfg.download.max_retries,
             external_downloader=ext_dl,
             naming_template=tmpl,
             dev=self._dev,
@@ -895,23 +898,20 @@ class QobuzSession:
                 try:
                     track_obj = self.client.get_track(str(summary.id))
                     url_info  = self.client.get_track_url(str(track_obj.id), quality=q)
-                except (NotStreamableError, NotFoundError) as exc:
-                    _title = getattr(summary, "display_title", getattr(summary, "title", str(summary.id)))
-                    dev_log(f"[yellow]track {summary.id} not streamable/found: {exc}[/yellow]")
+                except (NotStreamableError, APIError, httpx.TransportError) as exc:
                     _reason = str(exc)
-                    agg.failed.append(f"{_title} — {_reason}")
+                    agg.failed.append(f"{summary.title} — {_reason}")
                     if on_track_fail:
-                        on_track_fail(_title, _reason)
+                        on_track_fail(summary.title, _reason)
                     continue
-                except APIError as exc:
+                except (APIError, httpx.TransportError) as exc:
                     _title = getattr(summary, "display_title", getattr(summary, "title", str(summary.id)))
-                    dev_log(f"[red]track {summary.id} API error: {exc}[/red]")
-                    _reason = f"API error: {exc}"
+                    dev_log(f"[red]track {summary.id} error: {exc}[/red]")
+                    _reason = f"{type(exc).__name__}: {exc}"
                     agg.failed.append(f"{_title} — {_reason}")
                     if on_track_fail:
                         on_track_fail(_title, _reason)
                     continue
-
                 try:
                     dl_result = dl.download_track(
                         track=track_obj, url_info=url_info,
@@ -1038,6 +1038,7 @@ class QobuzSession:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            max_retries=cfg.download.max_retries,
             dev=self._dev,
         ) as dl:
             for goodie, path in zip(album_obj.goodies, dest_paths):
@@ -1207,6 +1208,7 @@ class QobuzSession:
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
             max_workers=n_work,
+            max_retries=cfg.download.max_retries,
             external_downloader=ext_dl,
             naming_template=tmpl,
             dev=self._dev,
@@ -1295,6 +1297,7 @@ class QobuzSession:
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
             max_workers=n_work,
+            max_retries=cfg.download.max_retries,
             naming_template=tmpl,
             dev=self._dev,
         ) as dl:
@@ -1352,6 +1355,7 @@ class QobuzSession:
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
             max_workers=workers or cfg.download.max_workers,
+            max_retries=cfg.download.max_retries,
             naming_template=cfg.naming.single,
             dev=self._dev,
         ) as dl:
@@ -1405,6 +1409,7 @@ class QobuzSession:
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
             max_workers=workers or cfg.download.max_workers,
+            max_retries=cfg.download.max_retries,
             naming_template=cfg.naming.single,
             dev=self._dev,
         ) as dl:
