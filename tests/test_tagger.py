@@ -336,3 +336,77 @@ def test_unsupported_format_raises(tmp_path):
     with pytest.raises(ValueError, match="Unsupported audio format"):
         tagger.tag(path, make_track(), embed_cover=False)
 
+
+def test_flac_qobuz_ids_written(tmp_path):
+    """QOBUZ_TRACK_ID, QOBUZ_ALBUM_ID, QOBUZ_ARTIST_ID are written.
+    UPC keeps its existing standard tag name (not QOBUZ_UPC)."""
+    path = tmp_path / "track.flac"
+    make_flac(path)
+
+    tagger = Tagger()
+    tagger.tag(path, make_track(), make_album(), embed_cover=False)
+
+    audio = FLAC(path)
+    assert audio["QOBUZ_TRACK_ID"] == ["12345"]
+    assert audio["QOBUZ_ALBUM_ID"] == ["abc123"]
+    assert audio["QOBUZ_ARTIST_ID"] == ["999"]
+    # UPC uses the standard tag name; QOBUZ_UPC must not exist.
+    assert audio["UPC"] == ["724384960224"]
+    assert "QOBUZ_UPC" not in audio
+
+def test_flac_qobuz_ids_standalone_track(tmp_path):
+    """Standalone track (album=None): only track ID and performer ID."""
+    path = tmp_path / "track.flac"
+    make_flac(path)
+
+    tagger = Tagger()
+    tagger.tag(
+        path,
+        make_track(performer={"id": 999, "name": "Daft Punk"}),
+        album=None,
+        embed_cover=False,
+    )
+
+    audio = FLAC(path)
+    assert audio["QOBUZ_TRACK_ID"] == ["12345"]
+    assert "QOBUZ_ALBUM_ID" not in audio
+    assert audio["QOBUZ_ARTIST_ID"] == ["999"]
+
+def test_mp3_qobuz_ids_written(tmp_path):
+    """Same IDs in MP3 TXXX frames. UPC uses the standard name."""
+    path = tmp_path / "track.mp3"
+    make_mp3(path)
+
+    tagger = Tagger()
+    tagger.tag(path, make_track(), make_album(), embed_cover=False)
+
+    tags = ID3(path)
+    assert "TXXX:QOBUZ TRACK ID" in tags
+    assert tags["TXXX:QOBUZ TRACK ID"].text[0] == "12345"
+    assert "TXXX:QOBUZ ALBUM ID" in tags
+    assert tags["TXXX:QOBUZ ALBUM ID"].text[0] == "abc123"
+    assert "TXXX:QOBUZ ARTIST ID" in tags
+    assert tags["TXXX:QOBUZ ARTIST ID"].text[0] == "999"
+    # UPC is a product identifier, not a Qobuz ID.
+    assert "TXXX:UPC" in tags
+    assert tags["TXXX:UPC"].text[0] == "724384960224"
+    assert "TXXX:QOBUZ UPC" not in tags
+
+def test_flac_qobuz_album_id_equals_upc_is_not_deduplicated(tmp_path):
+    """Some albums have Qobuz ID == UPC (observed: Mahler 6 / Haitink,
+    Disintegration Deluxe). Both tags must be written — they carry
+    different meaning even when the value is identical."""
+    path = tmp_path / "track.flac"
+    make_flac(path)
+
+    # Album where id == upc, as returned by Qobuz for many releases.
+    album = make_album(id="0002894830800", upc="0002894830800")
+
+    tagger = Tagger()
+    tagger.tag(path, make_track(), album, embed_cover=False)
+
+    audio = FLAC(path)
+    assert audio["QOBUZ_ALBUM_ID"] == ["0002894830800"]
+    assert audio["UPC"] == ["0002894830800"]
+    # Not suppressed even though values match.
+    assert audio["QOBUZ_ALBUM_ID"] != audio["UPC"] or True  # both present

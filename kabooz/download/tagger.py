@@ -11,7 +11,7 @@ from mutagen.id3 import (
     ID3, ID3NoHeaderError,
     TIT2, TPE1, TPE2, TALB, TDRC, TRCK, TPOS,
     TCON, TSRC, TCOP, TPUB, USLT, SYLT,
-    APIC, TIPL,
+    APIC, TIPL, TXXX,
 )
 from mutagen.mp3 import MP3
 
@@ -186,6 +186,27 @@ class Tagger:
         if track.version:
             audio["VERSION"] = track.version
 
+        # Qobuz identity — track/album/artist IDs.
+        # Written as plain strings; consumers can cast if needed.
+        #
+        # Note: Qobuz sometimes uses the UPC as the album ID for
+        # releases that never had an internal catalog number assigned
+        # (e.g. Mahler 6 / Haitink: id == upc == "0002894830800").
+        # Both tags are still written when the values coincide — they
+        # mean different things (Qobuz's own identifier vs the product
+        # barcode) and future tooling that reads one should not have
+        # to guess at the other. Do not deduplicate.
+
+        if track.id:
+            audio["QOBUZ_TRACK_ID"] = str(track.id)
+        _album_ids = album or track.album
+        if _album_ids and _album_ids.id:
+            audio["QOBUZ_ALBUM_ID"] = str(_album_ids.id)
+        if track.performer and track.performer.id:
+            audio["QOBUZ_ARTIST_ID"] = str(track.performer.id)
+        elif _album_ids and _album_ids.artist and _album_ids.artist.id:
+            audio["QOBUZ_ARTIST_ID"] = str(_album_ids.artist.id)
+
         # ── Primary artist ─────────────────────────────────────────────────
         if track.performer:
             audio["ARTIST"] = track.performer.name
@@ -338,6 +359,33 @@ class Tagger:
             # but is conventionally used for version/subtitle in ID3.
             audio["TPE4"] = TPE4(encoding=3, text=track.version)
 
+        # Qobuz internal IDs.
+        if track.id:
+            audio.add(TXXX(encoding=3, desc="QOBUZ TRACK ID", text=str(track.id)))
+        _album_ids = album or track.album
+        if _album_ids and _album_ids.id:
+            audio.add(TXXX(encoding=3, desc="QOBUZ ALBUM ID", text=str(_album_ids.id)))
+        if track.performer and track.performer.id:
+            audio.add(TXXX(encoding=3, desc="QOBUZ ARTIST ID", text=str(track.performer.id)))
+        elif _album_ids and _album_ids.artist and _album_ids.artist.id:
+            audio.add(TXXX(encoding=3, desc="QOBUZ ARTIST ID", text=str(_album_ids.artist.id)))
+
+        # UPC — not a Qobuz ID, but currently unwritten in MP3.
+        # Use the same tag name FLAC uses (UPC) via TXXX, matching
+        # the standard set by MusicBrainz Picard's BARCODE/UPC
+        # convention. Not added to the QOBUZ_* namespace.
+        #
+        # Note: Qobuz sometimes uses the UPC as the album ID for
+        # releases that never had an internal catalog number assigned
+        # (e.g. Mahler 6 / Haitink: id == upc == "0002894830800").
+        # Both tags are still written when the values coincide — they
+        # mean different things (Qobuz's own identifier vs the product
+        # barcode) and future tooling that reads one should not have
+        # to guess at the other. Do not deduplicate.
+        if _album_ids and _album_ids.upc:
+            audio.add(TXXX(encoding=3, desc="UPC", text=_album_ids.upc))
+
+
         # ── Primary artist ─────────────────────────────────────────────────
         if track.performer:
             audio["TPE1"] = TPE1(encoding=3, text=track.performer.name)
@@ -405,7 +453,6 @@ class Tagger:
 
         # ── ReplayGain (TXXX frames — standard convention for ID3) ─────────
         if track.audio_info:
-            from mutagen.id3 import TXXX
             ai = track.audio_info
             if ai.replaygain_track_gain:
                 audio.add(TXXX(
