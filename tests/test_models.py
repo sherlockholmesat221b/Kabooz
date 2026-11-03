@@ -421,3 +421,39 @@ def test_display_title_no_work_unchanged():
         "duration": 320, "track_number": 1, "media_number": 1,
     })
     assert t.display_title == "One More Time"
+
+
+def test_tracksummary_artist_or_returns_fallback():
+    """TrackSummary has no performer attribute; artist_or must return
+    the fallback instead of raising AttributeError. This documents the
+    constraint behind the TUI crash fix (Queue item E)."""
+    from kabooz.models.album import TrackSummary
+    summary = TrackSummary.from_dict({
+        "id": 1, "title": "Overture", "duration": 100,
+        "track_number": 1, "media_number": 1,
+    })
+    assert summary.artist_or("Bernard Haitink") == "Bernard Haitink"
+    assert summary.artist_or("") == ""
+    assert not hasattr(summary, "performer"), (
+        "TrackSummary should never gain a performer attribute — the "
+        "whole point of artist_or is to handle its absence."
+    )
+
+
+def test_track_artist_or_returns_performer_when_present():
+    """Track.artist_or returns the performer name when available."""
+    t = Track.from_dict({
+        "id": 1, "title": "X", "duration": 100,
+        "track_number": 1, "media_number": 1,
+        "performer": {"id": 999, "name": "Daft Punk"},
+    })
+    assert t.artist_or("fallback") == "Daft Punk"
+
+
+def test_track_artist_or_returns_fallback_when_no_performer():
+    """Track.artist_or falls back when performer is None."""
+    t = Track.from_dict({
+        "id": 1, "title": "X", "duration": 100,
+        "track_number": 1, "media_number": 1,
+    })
+    assert t.artist_or("fallback") == "fallback"

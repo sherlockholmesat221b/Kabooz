@@ -152,6 +152,15 @@ class Track:
             t += f" ({self.version})"
         return t
 
+    def artist_or(self, fallback: str) -> str:
+        """Return the primary performer name if available, else fallback.
+
+        Companion to TrackSummary.artist_or — the two methods have the
+        same signature so callers that may receive either type can call
+        them uniformly.
+        """
+        return self.performer.name if self.performer else fallback
+
     @classmethod
     def from_dict(cls, data: dict) -> Track:
         return cls(

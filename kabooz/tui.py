@@ -543,7 +543,7 @@ class AlbumPane(Widget):
                     entries.append(QueueEntry(
                         track_id=str(t.id),
                         title=getattr(t, "display_title", None) or t.title,
-                        artist=(t.performer.name if t.performer else artist_name),
+                        artist=t.artist_or(artist_name),
                         album=getattr(album, "display_title", album.title),
                         duration=t.duration or 0,
                     ))

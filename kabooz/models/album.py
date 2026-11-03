@@ -33,6 +33,21 @@ class TrackSummary:
             t += f" ({self.version})"
         return t
 
+    def artist_or(self, fallback: str) -> str:
+        """
+        Return an artist name suitable for display.
+
+        TrackSummary objects come from album.tracks.items and do not
+        carry performer information. This method always returns the
+        given fallback — the album-level artist — so callers that
+        receive either a TrackSummary or a full Track can call
+        artist_or() uniformly without risking AttributeError.
+
+        Full Track objects override this behaviour and return their own
+        performer name when available (see Track.artist_or).
+        """
+        return fallback
+
     @classmethod
     def from_dict(cls, data: dict) -> TrackSummary:
         return cls(
