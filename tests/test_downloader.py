@@ -330,3 +330,60 @@ def test_template_disc_segment_dropped_for_standalone_track(tmp_path):
     )
     assert "Disc" not in str(path)
     assert path == tmp_path / "Daft Punk" / "Single.flac"
+
+
+def test_track_all_matches_track_number_on_monodisc(tmp_path):
+    """On a monodisc album, {track_all} equals {track}."""
+    album = make_album(title="Discovery", media_count=1, tracks_count=1)
+    track = make_track(title="One More Time", track_number=1, media_number=1)
+    path = resolve_track_path(
+        track, tmp_path, ".flac", album=album,
+        template="{track_all:02d}. {title}",
+    )
+    assert path.name == "01. One More Time.flac"
+
+
+def test_track_all_continues_across_discs(tmp_path):
+    """On a multidisc album, {track_all} counts all tracks from earlier
+    discs plus the current track's per-disc position."""
+    album_payload = {
+        "id": "multi", "title": "Multi",
+        "tracks_count": 5, "duration": 0, "media_count": 2,
+        "tracks": {
+            "offset": 0, "limit": 100, "total": 5,
+            "items": [
+                {"id": 1, "title": "A", "track_number": 1, "media_number": 1},
+                {"id": 2, "title": "B", "track_number": 2, "media_number": 1},
+                {"id": 3, "title": "C", "track_number": 3, "media_number": 1},
+                {"id": 4, "title": "D", "track_number": 1, "media_number": 2},
+                {"id": 5, "title": "E", "track_number": 2, "media_number": 2},
+            ],
+        },
+    }
+    album = Album.from_dict(album_payload)
+
+    # Disc 2 track 1 → 4th track overall (3 on disc 1 + 1)
+    d2t1 = make_track(title="D", track_number=1, media_number=2)
+    p = resolve_track_path(
+        d2t1, tmp_path, ".flac", album=album,
+        template="{track_all:02d}. {title}",
+    )
+    assert p.name == "04. D.flac"
+
+    # Disc 2 track 2 → 5th track overall
+    d2t2 = make_track(title="E", track_number=2, media_number=2)
+    p = resolve_track_path(
+        d2t2, tmp_path, ".flac", album=album,
+        template="{track_all:02d}. {title}",
+    )
+    assert p.name == "05. E.flac"
+
+
+def test_track_all_falls_back_to_track_number_without_album(tmp_path):
+    """Standalone track download (album=None) falls back to track_number."""
+    track = make_track(title="Single", track_number=7, media_number=1)
+    path = resolve_track_path(
+        track, tmp_path, ".flac", album=None,
+        template="{track_all:02d}. {title}",
+    )
+    assert path.name == "07. Single.flac"

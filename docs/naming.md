@@ -43,6 +43,7 @@ Discovery [FLAC 24bit 96kHz] [2001]/01. One More Time.flac
 | `{version}` | Version/subtitle | `Live` |
 | `{artist}` | Primary performing artist | `Daft Punk` |
 | `{track}` | Track number (integer) | `1` |
+| `{track_all}` | Track number counted continuously across all discs | `13` (disc 2, track 1 of a 3-disc set) |
 | `{disc}` | Disc number (integer) | `2` |
 | `{isrc}` | ISRC code | `GBDCE0000001` |
 
@@ -57,6 +58,8 @@ Discovery [FLAC 24bit 96kHz] [2001]/01. One More Time.flac
 | `{label}` | Record label | `Virgin` |
 | `{genre}` | Primary genre | `Electronic` |
 | `{upc}` | Album UPC barcode | `724384960224` |
+
+> `{track}` vs `{track_all}`. `{track}` is the track's position within its own disc (track_number from the API). `{track_all}` is the position in the album counted continuously — for a 2-disc album where disc 1 has 12 tracks, disc 2 track 1 is `{track}` = 1 and `{track_all}` = 13. Use `{track_all}` for flat-folder templates that do not use `{disc}`/ and want files in sequential order on disk.
 
 ### Quality
 

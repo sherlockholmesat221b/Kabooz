@@ -28,6 +28,31 @@ _STRIP_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 # Used to detect templates that reference the disc number in a path segment.
 _DISC_PLACEHOLDER = re.compile(r"\{disc(?:[:}])")
 
+def _compute_track_all(track: Track, album: Optional[Album]) -> int:
+    """
+    Position of `track` in the full album, counted continuously across
+    all discs. For a monodisc album this equals track.track_number.
+    For a multidisc album it is the count of tracks on earlier discs
+    plus the track's own per-disc position.
+
+    Falls back to track.track_number when no album context is available
+    (standalone track download, playlist, favorites).
+    """
+    tn = track.track_number or 0
+    if album is None or not album.tracks or not album.tracks.items:
+        return tn
+
+    current_disc = track.media_number or 1
+    if current_disc <= 1:
+        return tn
+
+    prior = sum(
+        1 for s in album.tracks.items
+        if (s.media_number or 1) < current_disc
+    )
+    return prior + tn
+
+
 def sanitize(name: str) -> str:
     """Make a string safe for use as a single filename component."""
     for char, replacement in _LOOKALIKE_MAP.items():
@@ -112,6 +137,7 @@ def _build_context(
         "version": track.version or "",
         "artist": artist,
         "track": track.track_number or 0,
+        "track_all": _compute_track_all(track, album),
         "disc": track.media_number or 1,
         "isrc": track.isrc or "",
         # Quality

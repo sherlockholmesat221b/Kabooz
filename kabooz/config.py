@@ -145,7 +145,7 @@ def validate_config(cfg: QobuzConfig) -> None:
 
     _KNOWN_PLACEHOLDERS = {
         "title", "raw_title", "work", "version",
-        "artist", "track", "disc", "isrc",
+        "artist", "track", "track_all", "disc", "isrc",
         "bit_depth", "sampling_rate", "quality",
         "album", "raw_album", "albumartist", "year",
         "label", "genre", "upc",
