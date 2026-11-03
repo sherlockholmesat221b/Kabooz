@@ -125,20 +125,27 @@ class Track:
         """
         Full display title as it should appear in tags and filenames.
 
-        Follows the convention from the reference codebase:
-          - Classical tracks: "{work} - {title}"
-          - Version suffix appended for all: "{title} ({version})"
+        Classical tracks often arrive from Qobuz with the work name
+        already embedded in the title string (e.g. work="Symphony No. 6
+        in A Minor", title="Mahler: Symphony No. 6 in A Minor: 1.
+        Allegro"). In that case the work is not prepended again — that
+        would produce a doubled prefix and a longer-than-necessary
+        filename.
+
+        When the work is not embedded in the title, it is prepended as
+        before: "{work} - {title}".
 
         Examples:
             work="Symphony No. 40", title="I. Molto allegro"
               → "Symphony No. 40 - I. Molto allegro"
+            work="Symphony No. 6 in A Minor",
+            title="Mahler: Symphony No. 6 in A Minor: 1. Allegro"
+              → "Mahler: Symphony No. 6 in A Minor: 1. Allegro"
             title="Billie Jean", version="2012 Remaster"
               → "Billie Jean (2012 Remaster)"
-            work="Piano Sonata No. 14", title="I. Adagio", version="Live"
-              → "Piano Sonata No. 14 - I. Adagio (Live)"
         """
         t = ""
-        if self.work:
+        if self.work and self.work.lower() not in self.title.lower():
             t += f"{self.work} - "
         t += self.title.rstrip()
         if self.version:

@@ -388,3 +388,36 @@ def test_playlist_flags():
     pl = Playlist.from_dict(PLAYLIST_PAYLOAD)
     assert pl.is_public is True
     assert pl.is_collaborative is False
+
+def test_display_title_does_not_duplicate_work_in_title():
+    """When the work name is already inside the title string (very common
+    for classical albums), don't prepend it again."""
+    t = Track.from_dict({
+        "id": 1,
+        "title": "Mahler: Symphony No. 6 in A Minor: 1. Allegro",
+        "duration": 100, "track_number": 1, "media_number": 1,
+        "work": "Symphony No. 6 in A Minor",
+    })
+    assert t.display_title == "Mahler: Symphony No. 6 in A Minor: 1. Allegro"
+    assert t.display_title.count("Symphony No. 6 in A Minor") == 1
+
+
+def test_display_title_prepends_work_when_absent():
+    """When work is not present in the title, prepend it as before."""
+    t = Track.from_dict({
+        "id": 1,
+        "title": "1. Allegro",
+        "duration": 100, "track_number": 1, "media_number": 1,
+        "work": "Symphony No. 6 in A Minor",
+    })
+    assert t.display_title == "Symphony No. 6 in A Minor - 1. Allegro"
+
+
+def test_display_title_no_work_unchanged():
+    """Non-classical tracks with no work: unchanged from v0.1.0."""
+    t = Track.from_dict({
+        "id": 1,
+        "title": "One More Time",
+        "duration": 320, "track_number": 1, "media_number": 1,
+    })
+    assert t.display_title == "One More Time"
