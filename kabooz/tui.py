@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 # kabooz/tui.py
 """
-Qobuz TUI — terminal music player.
+Qobuz TUI — Textual-based experimental player.
+
+Status: EXPERIMENTAL. Not in pyproject.toml; requires `pip install
+textual`. The supported, dependency-free TUI is kabooz/tui_curses.py.
+
+Known issues:
+- Search does not surface results due to a worker/message delivery
+  problem in the Textual async model. Root cause not investigated —
+  the curses TUI is the supported path.
+- Development of the Textual UI is deferred. A full terminal player
+  (audio engine, cover art rendering, caching, edge cases) is a
+  separate project, not part of Kabooz's scope.
+
+Run from the project root:
+    python -m kabooz.tui
 
 Architecture rule: presentation layer only.  Never imports from
 kabooz.client, never calls sess.client.anything, never duplicates

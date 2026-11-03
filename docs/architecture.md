@@ -8,8 +8,8 @@ kabooz/
 ├── client.py           Raw Qobuz API wrapper
 ├── session.py          Business logic — the only place it lives
 ├── cli.py              CLI presentation layer
-├── tui.py              TUI (Textual-based)
-├── tui_curses.py       TUI (curses fallback)
+├── tui.py              TUI (Textual-based, EXPERIMENTAL — see module docstring)
+├── tui_curses.py       TUI (curses — the supported, dependency-free TUI)
 ├── config.py           TOML config read/write
 ├── quality.py          Quality IntEnum
 ├── exceptions.py       Exception hierarchy

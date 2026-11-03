@@ -91,6 +91,22 @@ or inaccurate.
       explanation. `docs/configuration.md` gained a note on the
       network requirement for `musicbrainz.org`.
 
+- [x] **TUI strategy decision.** `tui.py` (Textual) shelved as
+      experimental; `tui_curses.py` is the supported TUI. Rationale:
+      Textual is not a shipped dependency (opt-in); its async worker
+      model produces bugs that are difficult to fix without local
+      debugging; a full terminal player (audio engine, cover art,
+      caching, edge cases) is a separate project. `tui.py` retained
+      as a reference for anyone who wants to build on it.
+
+- [x] **TUI `TrackSummary` crash and search parsing.** Fixed in both
+      TUI files — `TrackSummary.artist_or()` / `Track.artist_or()`
+      added to models; `SearchResults` attribute access replaces
+      `.get()`. `tui_curses.py` validated manually end-to-end
+      (search → album view → playback). `tui.py` search remains
+      non-functional for a Textual-specific reason, accepted as
+      out of scope.
+
 #### NOTES
 
 - **MusicBrainz — three-layer failure, fully characterised.**
