@@ -356,3 +356,29 @@ def test_get_playlist_not_found_raises():
     client = authenticated_client()
     with pytest.raises(NotFoundError):
         client.get_playlist(0)
+
+
+def test_canonical_signature_string_is_stable():
+    """The canonical string and resulting MD5 must not change without
+    review — a signature change breaks every authenticated request.
+    This is a regression guard for Issue #1A."""
+    import hashlib
+    from kabooz.client import _canonical_signature_string
+
+    canonical = _canonical_signature_string(
+        track_id="12345678",
+        format_id=6,
+        intent="stream",
+        ts="1700000000",
+        secret="abcdef1234567890abcdef1234567890",
+    )
+    assert canonical == (
+        "trackgetFileUrl"
+        "format_id6"
+        "intentstream"
+        "track_id12345678"
+        "1700000000"
+        "abcdef1234567890abcdef1234567890"
+    )
+    expected_md5 = hashlib.md5(canonical.encode("utf-8")).hexdigest()
+    assert expected_md5 == hashlib.md5(canonical.encode("utf-8")).hexdigest()

@@ -101,3 +101,15 @@ class ConfigError(QobuzError):
     Raised at load/update time so you get a clear message immediately
     rather than a cryptic crash later."""
     pass
+
+class SignatureError(APIError):
+    """
+    Qobuz rejected the request signature. Almost always means the
+    app_secret is stale or the device clock is off.
+
+    To fix:
+      1. kabooz login --app-secret NEW_SECRET
+      2. Check that the system clock is correct
+      3. Or wait — Qobuz occasionally returns this transiently
+    """
+    pass

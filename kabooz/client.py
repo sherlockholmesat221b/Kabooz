@@ -18,6 +18,7 @@ from .exceptions import (
     NoAuthError,
     NotFoundError,
     NotStreamableError,
+    SignatureError,
     PoolModeError,
     RateLimitError,
     TokenExpiredError,
@@ -41,6 +42,25 @@ from .models.search import (
 
 _BASE_URL = "https://www.qobuz.com/api.json/0.2"
 
+
+def _canonical_signature_string(
+    track_id: str, format_id: int, intent: str, ts: str, secret: str,
+) -> str:
+    """
+    The canonical string Qobuz expects for MD5 signing of /track/getFileUrl.
+
+    Reference implementation. Any change here must be accompanied by a
+    test update and a DEVLOG entry — the algorithm has been stable since
+    Qobuz's reverse-engineered API was first documented.
+    """
+    return (
+        f"trackgetFileUrl"
+        f"format_id{format_id}"
+        f"intent{intent}"
+        f"track_id{track_id}"
+        f"{ts}"
+        f"{secret}"
+    )
 
 class QobuzClient:
     """
@@ -357,7 +377,12 @@ class QobuzClient:
                         f"Expected JSON response but got: {response.text[:200]!r}",
                         status_code=status,
                     )
-
+        if "Invalid Request Signature" in body.get("message", ""):
+            from .exceptions import SignatureError
+            raise SignatureError(
+                body.get("message", "Invalid Request Signature"),
+                status_code=status,
+            )
         if status == 401:
             message = body.get("message", "Unauthorized")
             if "token" in message.lower():
@@ -387,16 +412,29 @@ class QobuzClient:
     ) -> tuple[str, str]:
         """Compute the timestamp + MD5 signature required by getFileUrl."""
         ts = str(int(time.time()))
-        canonical = (
-            f"trackgetFileUrl"
-            f"format_id{format_id}"
-            f"intentstream"
-            f"track_id{track_id}"
-            f"{ts}"
-            f"{self._credentials.app_secret}"
+        canonical = _canonical_signature_string(
+            track_id=track_id,
+            format_id=format_id,
+            intent="stream",
+            ts=ts,
+            secret=self._credentials.app_secret,
         )
+
+        if self._dev:
+            from .dev import dev_log
+            masked = (
+                self._credentials.app_secret[:4] + "..."
+                if self._credentials.app_secret else "None"
+            )
+            dev_log(
+                f"signing track_id={track_id} format_id={format_id} "
+                f"ts={ts} secret={masked}\n"
+                f"  canonical: {canonical.replace(self._credentials.app_secret, masked)}"
+            )
+
         sig = hashlib.md5(canonical.encode("utf-8"), usedforsecurity=False).hexdigest()
         return ts, sig
+
 
     # ── Catalog — single-item fetches ──────────────────────────────────────
 
