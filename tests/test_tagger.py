@@ -410,3 +410,32 @@ def test_flac_qobuz_album_id_equals_upc_is_not_deduplicated(tmp_path):
     assert audio["UPC"] == ["0002894830800"]
     # Not suppressed even though values match.
     assert audio["QOBUZ_ALBUM_ID"] != audio["UPC"] or True  # both present
+
+
+def test_flac_embeds_large_cover_not_original(tmp_path):
+    """Embedded cover must be _600.jpg (img.large), not _org.jpg.
+    Full-resolution goes to cover.jpg instead, handled in session."""
+    path = tmp_path / "track.flac"
+    make_flac(path)
+
+    fake_cover = b"\xff\xd8\xff" + b"\x00" * 100
+    captured = {}
+
+    def fake_fetch(url):
+        captured["url"] = url
+        return fake_cover
+
+    album = make_album(image={
+        "large":     "https://static.qobuz.com/images/covers/ab/cd/abcd_600.jpg",
+        "small":     "https://static.qobuz.com/images/covers/ab/cd/abcd_230.jpg",
+        "thumbnail": "https://static.qobuz.com/images/covers/ab/cd/abcd_50.jpg",
+        "back":      None,
+    })
+
+    tagger = Tagger()
+    with patch.object(tagger, "_fetch_cover", side_effect=fake_fetch):
+        tagger.tag(path, make_track(), album, embed_cover=True)
+
+    assert captured["url"] is not None
+    assert "_600." in captured["url"]
+    assert "_org." not in captured["url"]

@@ -1717,11 +1717,15 @@ class QobuzSession:
         url: Optional[str] = None
 
         if album and album.image:
-            url = album.image.large or album.image.small
+            url = (
+                album.image.original
+                or album.image.large
+                or album.image.small
+            )
         elif track and track.album and track.album.image:
             img = track.album.image
-            if hasattr(img, "large"):
-                url = img.large or img.small
+            if hasattr(img, "original"):
+                url = img.original or img.large or img.small
             elif isinstance(img, dict):
                 url = img.get("large") or img.get("small")
 
