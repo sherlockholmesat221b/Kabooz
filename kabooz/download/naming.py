@@ -24,6 +24,10 @@ _LOOKALIKE_MAP = {
 _STRIP_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
+# Matches "{disc}" and any formatted variant "{disc:02d}", "{disc:Nd}".
+# Used to detect templates that reference the disc number in a path segment.
+_DISC_PLACEHOLDER = re.compile(r"\{disc(?:[:}])")
+
 def sanitize(name: str) -> str:
     """Make a string safe for use as a single filename component."""
     for char, replacement in _LOOKALIKE_MAP.items():
@@ -159,7 +163,24 @@ def render_template(
     raw_segments = template.split("/")
     rendered_segments: list[str] = []
 
+    # Issue #2 — only keep disc subfolders on albums that genuinely have more
+    # than one disc. Template segments that reference {disc} (typically
+    # "Disc {disc}") are dropped entirely for monodisc albums and for
+    # standalone tracks, so no pointless "Disc 1/" folder is created.
+    # The {disc} value itself stays a plain integer (e.g. "1") for callers
+    # that put it in a filename segment.
+    is_multidisc = album is not None and (album.media_count or 0) > 1
+
     for i, segment in enumerate(raw_segments):
+        is_last = (i == len(raw_segments) - 1)
+
+        if (
+            not is_last
+            and _DISC_PLACEHOLDER.search(segment)
+            and not is_multidisc
+        ):
+            continue
+
         try:
             rendered = segment.format_map(ctx)
         except (ValueError, KeyError):
@@ -171,7 +192,7 @@ def render_template(
         if not rendered:
             continue
 
-        if i == len(raw_segments) - 1:
+        if is_last:
             rendered += ext
 
         rendered_segments.append(rendered)

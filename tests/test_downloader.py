@@ -278,3 +278,55 @@ def test_progress_callback_is_called(tmp_path):
     # Last call should report full completion
     assert calls[-1][0] == calls[-1][1]
 
+
+
+def test_template_disc_segment_dropped_for_monodisc(tmp_path):
+    """Issue #2: 'Disc {disc}/' template must not create a Disc 1/ folder
+    for a monodisc album. The segment is dropped entirely."""
+    track = make_track(title="Overture", track_number=1, media_number=1)
+    album = make_album(
+        title="Mahler 6", release_date_original="1987-03-01", media_count=1,
+    )
+    path = resolve_track_path(
+        track, tmp_path, ".flac",
+        album=album,
+        bit_depth=16, sampling_rate=44.1,
+        template="{album}/Disc {disc}/{track:02d}. {title}",
+    )
+    assert path == tmp_path / "Mahler 6" / "01. Overture.flac"
+    assert "Disc" not in str(path)
+
+
+def test_template_disc_segment_kept_for_multidisc(tmp_path):
+    """Genuine multidisc albums still get Disc N/ folders."""
+    album = make_album(
+        title="Two Disc Set", release_date_original="2000-01-01", media_count=2,
+    )
+    disc1 = make_track(title="A", track_number=1, media_number=1)
+    disc2 = make_track(title="B", track_number=1, media_number=2)
+
+    p1 = resolve_track_path(
+        disc1, tmp_path, ".flac", album=album,
+        template="{album}/Disc {disc}/{track:02d}. {title}",
+    )
+    p2 = resolve_track_path(
+        disc2, tmp_path, ".flac", album=album,
+        template="{album}/Disc {disc}/{track:02d}. {title}",
+    )
+    assert p1 == tmp_path / "Two Disc Set" / "Disc 1" / "01. A.flac"
+    assert p2 == tmp_path / "Two Disc Set" / "Disc 2" / "01. B.flac"
+
+
+def test_template_disc_segment_dropped_for_standalone_track(tmp_path):
+    """Single-track downloads (album=None) also drop 'Disc {disc}/'."""
+    track = make_track(
+        title="Single", track_number=1, media_number=1,
+        performer={"id": 999, "name": "Daft Punk"},
+    )
+    path = resolve_track_path(
+        track, tmp_path, ".flac",
+        album=None,
+        template="{artist}/Disc {disc}/{title}",
+    )
+    assert "Disc" not in str(path)
+    assert path == tmp_path / "Daft Punk" / "Single.flac"
