@@ -588,26 +588,30 @@ class UI:
             return
 
         rows: list[Row] = []
-        for t in tr.get("tracks", {}).get("items", []):
-            rows.append(Row(
-                "🎵", t.get("title", ""),
-                (t.get("performer") or {}).get("name", ""),
-                (t.get("album") or {}).get("title", ""),
-                "track", t,
-            ))
-        for a in al.get("albums", {}).get("items", []):
-            rows.append(Row(
-                "💿", a.get("title", ""),
-                (a.get("artist") or {}).get("name", ""),
-                (a.get("release_date_original") or "")[:4],
-                "album", a,
-            ))
-        for a in ar.get("artists", {}).get("items", []):
-            rows.append(Row(
-                "👤", a.get("name", ""),
-                f"{a.get('albums_count', '')} albums", "",
-                "artist", a,
-            ))
+        # search() returns SearchResults — typed, not dicts.
+        if tr.tracks:
+            for t in tr.tracks.items:
+                rows.append(Row(
+                    "🎵", t.title,
+                    t.performer.name if t.performer else "",
+                    t.album.title if t.album else "",
+                    "track", t,
+                ))
+        if al.albums:
+            for a in al.albums.items:
+                rows.append(Row(
+                    "💿", a.title,
+                    a.artist.name if a.artist else "",
+                    (a.release_date_original or "")[:4],
+                    "album", a,
+                ))
+        if ar.artists:
+            for a in ar.artists.items:
+                rows.append(Row(
+                    "👤", a.name,
+                    f"{a.albums_count or ''} albums", "",
+                    "artist", a,
+                ))
         self._ui_queue.put(("search_results", rows))
 
     def _album_thread(self, entity_id: str, title: str) -> None:
@@ -772,30 +776,30 @@ class UI:
         row = rows[self.cursor]
 
         if row.kind == "track":
-            t = row.data
+            t = row.data   # Track object from search
             entry = QueueEntry(
-                track_id=str(t.get("id","")),
-                title=t.get("title",""),
-                artist=(t.get("performer") or {}).get("name",""),
-                album=(t.get("album") or {}).get("title",""),
-                duration=t.get("duration", 0),
+                track_id=str(t.id),
+                title=t.title,
+                artist=t.performer.name if t.performer else "",
+                album=t.album.title if t.album else "",
+                duration=t.duration or 0,
             )
             self.queue.add(entry)
             self.queue.play_index(len(self.queue) - 1)
             self._start_entry(entry)
 
         elif row.kind == "album":
-            a = row.data
+            a = row.data   # Album object from search
             threading.Thread(
-                target=self._album_thread, args=(str(a.get("id","")), a.get("title","")),
+                target=self._album_thread, args=(str(a.id), a.title),
                 daemon=True,
             ).start()
 
         elif row.kind == "artist":
-            a = row.data
+            a = row.data   # Artist object from search
             threading.Thread(
                 target=self._album_thread,
-                args=(f"artist:{a.get('id','')}", a.get("name","")),
+                args=(f"artist:{a.id}", a.name),
                 daemon=True,
             ).start()
 

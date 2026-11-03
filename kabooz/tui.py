@@ -447,20 +447,20 @@ class ResultsPane(Widget):
             return
         item = self._rows[idx]
         if item["type"] == "track":
-            t = item["data"]
+            t = item["data"]      # Track object
             self.post_message(self.TrackChosen(QueueEntry(
-                track_id=str(t.get("id", "")),
-                title=t.get("title", ""),
-                artist=(t.get("performer") or {}).get("name", ""),
-                album=(t.get("album") or {}).get("title", ""),
-                duration=t.get("duration", 0),
+                track_id=str(t.id),
+                title=t.title,
+                artist=t.performer.name if t.performer else "",
+                album=t.album.title if t.album else "",
+                duration=t.duration or 0,
             )))
-        elif item["type"] in ("album", "artist"):
-            d         = item["data"]
-            aid       = str(d.get("id", ""))
-            entity_id = f"artist:{aid}" if item["type"] == "artist" else aid
-            name      = d.get("title") or d.get("name", "")
-            self.post_message(self.AlbumChosen(entity_id, name))
+        elif item["type"] == "album":
+            a = item["data"]      # Album object
+            self.post_message(self.AlbumChosen(str(a.id), a.title))
+        elif item["type"] == "artist":
+            ar = item["data"]     # Artist object
+            self.post_message(self.AlbumChosen(f"artist:{ar.id}", ar.name))
 
     def on_key(self, ev: Any) -> None:
         if ev.key == "escape":
@@ -906,36 +906,43 @@ class QobuzTUI(App):
         rows:     list[tuple] = []
         new_rows: list[dict]  = []
 
-        for t in tr.get("tracks", {}).get("items", []):
-            new_rows.append({"type": "track", "data": t})
-            rows.append((
-                "🎵",
-                t.get("title", ""),
-                (t.get("performer") or {}).get("name", ""),
-                (t.get("album") or {}).get("title", ""),
-                str(t.get("id", "")),
-            ))
-        for a in al.get("albums", {}).get("items", []):
-            new_rows.append({"type": "album", "data": a})
-            rows.append((
-                "💿",
-                a.get("title", ""),
-                (a.get("artist") or {}).get("name", ""),
-                (a.get("release_date_original") or "")[:4],
-                str(a.get("id", "")),
-            ))
-        for a in ar.get("artists", {}).get("items", []):
-            new_rows.append({"type": "artist", "data": a})
-            rows.append((
-                "👤",
-                a.get("name", ""),
-                f"{a.get('albums_count', '')} albums",
-                "",
-                str(a.get("id", "")),
-            ))
+        # search() returns SearchResults — typed dataclasses, not raw dicts.
+        # .tracks / .albums / .artists are SearchPage objects (with .items)
+        # or None when that type was not requested. SearchPage.items contains
+        # Track, Album, and Artist model objects respectively.
+        if tr.tracks:
+            for t in tr.tracks.items:
+                new_rows.append({"type": "track", "data": t})
+                rows.append((
+                    "🎵",
+                    t.title,
+                    t.performer.name if t.performer else "",
+                    t.album.title if t.album else "",
+                    str(t.id),
+                ))
+        if al.albums:
+            for a in al.albums.items:
+                new_rows.append({"type": "album", "data": a})
+                rows.append((
+                    "💿",
+                    a.title,
+                    a.artist.name if a.artist else "",
+                    (a.release_date_original or "")[:4],
+                    str(a.id),
+                ))
+        if ar.artists:
+            for a in ar.artists.items:
+                new_rows.append({"type": "artist", "data": a})
+                rows.append((
+                    "👤",
+                    a.name,
+                    f"{a.albums_count or ''} albums",
+                    "",
+                    str(a.id),
+                ))
 
         self.call_from_thread(
-            self.query_one(ResultsPane).show_results, rows, new_rows
+             self.query_one(ResultsPane).show_results, rows, new_rows
         )
 
     # ── Playback ──────────────────────────────────────────────────────────
