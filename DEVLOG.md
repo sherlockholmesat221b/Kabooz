@@ -42,10 +42,10 @@ or inaccurate.
 ---
 
 
-## 2026-11-03
+### 2026-11-03
 **Author**: [sherlockholmesat221b]
-**Commits Made**: 214f9c1..
-### DONE
+**Commits Made**: 214f9c1..c1298b6
+#### DONE
 - [x] **Issue #2 — `Disc {disc}/` folder created for monodisc albums.**
       Template segments containing `{disc}` are dropped when
       `album.media_count <= 1` or `album is None` (standalone track).
@@ -81,10 +81,55 @@ or inaccurate.
       `# qobuz-playlist v1` header. The code has written
       `# kabooz-playlist v1` since the rename. Test updated.
 
-- [x] **Tests.** 7 new tests total: 3 for `{disc}` segment dropping
-      (monodisc, multidisc, `album=None`), 3 for `{track_all}`
-      (monodisc, multidisc, `album=None`), 1 for MB User-Agent format
-      (`tests/test_musicbrainz.py`). Suite: **234 passed**.
+- [x] **`work` prefix dedupe in classical titles.**
+      `Track.display_title` no longer prepends `work` when
+      `work.lower()` already appears inside `title.lower()`. Qobuz
+      routinely returns the work name in both fields for classical
+      albums, producing `"Symphony No. 6 in A Minor - Mahler: Symphony
+      No. 6 in A Minor: 1. Allegro…"`. Non-classical tracks are
+      unaffected (`work` is empty and the branch is skipped).
+      Commit: 4696c4c.
+
+- [x] **Issue #3 — retry on `httpx.TransportError`.**
+      `Downloader` gains `max_retries` (default 2 = 3 total attempts).
+      Retries are immediate (no sleep) and use the existing `Range`
+      header, resuming from the `.part` file each attempt. The retry
+      wrapper and streaming loop are split:
+      `_download_to_path` / `_stream_to_part` and
+      `_download_goodie_to_path` / `_stream_goodie`. `_stream_*` reads
+      `part_size` / `existing_size` fresh per attempt, so a transient
+      `HEAD` failure on retry does not truncate the `.part` file.
+      `session.download_album` and `download_playlist` widen their
+      per-track `except` to catch `httpx.TransportError` alongside
+      `APIError`. New `download.max_retries` config with 0–10
+      validation. Rationale for no backoff: the retry recovers
+      transient peer resets, not rate limits. Persistent failures
+      escalate via `.part` resume across runs.
+
+- [x] **Issue #1A — signature diagnostics.**
+      New `SignatureError(APIError)` raised when a response body
+      contains "Invalid Request Signature", with a message pointing
+      at `--app-secret` and clock check. `_sign_track_url_request`
+      logs the masked canonical string and timestamp in `--dev` for
+      comparison against a known-working client.
+      `_canonical_signature_string` extracted as a module-level
+      helper and locked in a unit test. **Confirmed against live
+      API**: the canonical string and MD5 match qobuz-dl exactly.
+      The failure mode is almost certainly a stale `app_secret` or
+      clock skew, not a code bug — hence #1B (below) is the
+      permanent fix, deferred until Issue #1 reproduces.
+
+- [x] **Tests.** 14 new tests this session, bringing the suite from
+      230 → **244 passing**:
+      · 3 for `{disc}` segment dropping (monodisc, multidisc,
+        `album=None`)
+      · 3 for `{track_all}` (monodisc, multidisc, `album=None`)
+      · 1 for MB User-Agent format
+      · 3 for `artist_or()` on `TrackSummary` / `Track` (TUI crash
+        guard)
+      · 3 for download retry (track retry, goodie retry, bounded
+        give-up)
+      · 1 for canonical signature string stability
 
 - [x] **Docs.** `docs/naming.md` gained `{disc}` drop-behaviour note,
       the `{track_all}` row, and a `{track}` vs `{track_all}`
@@ -158,26 +203,6 @@ or inaccurate.
 
 Open bugs remaining, from both the v0.1.0 baseline and this session:
 
-- **TUI `AlbumPane` crash on classical albums.**
-  `tui.py::AlbumPane._load` iterates `album.tracks.items` and reads
-  `t.performer.name`, but `album.tracks.items` are `TrackSummary`
-  objects, which do not have a `performer` attribute. Crashes for
-  every album browsed in the TUI. Matches the DEVLOG entry from
-  2026-03-17.
-  Fix: fetch full `Track` via `sess.get_track()` per summary, or
-  guard with `getattr(t, "performer", None)` and fall back to the
-  album-level artist name.
-
-- **Duplicate `work` prefix in `display_title`.**
-  For albums where Qobuz returns the work name inside the `title`
-  field *and* in the `work` field (very common in classical),
-  `Track.display_title` prepends `work` unconditionally, producing
-  `"Symphony No. 6 in A Minor - Mahler: Symphony No. 6 in A Minor:
-  1. Allegro…"`. Visible in every classical filename and TITLE tag
-  downloaded this session. Fix: only prepend `work` when
-  `work.lower() not in title.lower()`. Non-classical tracks are
-  unaffected.
-
 - **`max_workers` / `-j` is a no-op for all CLI download commands.**
   `session.download_album`, `download_playlist`,
   `download_artist_discography`, `download_favorites`, and
@@ -188,13 +213,6 @@ Open bugs remaining, from both the v0.1.0 baseline and this session:
   downloads with configurable worker count (`-j`)" — currently
   false. Larger fix, needs threading-safety review for mutagen
   writes.
-
-- **`httpx.RemoteProtocolError` aborts entire album.** No retry
-  anywhere. A single `RemoteProtocolError` (peer closed connection
-  mid-stream) aborts the whole album because the per-track
-  `except` in `session.download_album` only catches `APIError`, not
-  `httpx.TransportError`. `.part` resume works across runs but not
-  within a run.
 
 - **`lookup_isrc` logs 404 as `error`.** Cosmetic: a `404 Not Found`
   from MusicBrainz means "no coverage", not "error". Only visible
@@ -207,15 +225,166 @@ Open bugs remaining, from both the v0.1.0 baseline and this session:
   resolves it. Optional `proxy` config for MB could help users
   without VPN, deferred (VPN already covers the case).
 
+#### TODO
+
+- [ ] **Issue #1B — `--refresh-secret` credential scraper.**
+      Fetch the current Qobuz web-player `app_id` and `app_secret`
+      from `play.qobuz.com`. Adapted from
+      `QobuzDL/Qobuz-AppID-Secret-Tool/main.py` (which uses
+      `aiohttp`); port to `httpx` for consistency and to avoid a new
+      dependency. Wire `--refresh-secret` flag into `kabooz login`.
+      Fallback when scraping fails: prompt for manual `--app-secret`.
+      **Deferred until Issue #1 reproduces in practice** — the
+      `--dev` signing log shipped in #1A will tell us whether the
+      failure is a stale secret (scraper needed) or something else
+      (scraper is the wrong fix).
+
+- [ ] **Consider** changing the default `naming.album` template to
+      include `Disc {disc}/`:
+      `"{albumartist}/{album} [{quality}] [{year}]/Disc {disc}/{track:02d}. {title}"`.
+      Safe now that the `{disc}` segment is dropped for monodisc
+      albums. Changes default for new users only. Deferred.
+
+- [ ] **Cosmetic** — quiet first-run ffmpeg in `dev.py` with
+      `-hide_banner -loglevel error`.
+
+- [ ] **Cosmetic** — split `lookup_isrc`'s 404 case into a distinct
+      dev log message.
+      
 #### IDEAS
 
-- Optional `--refresh-secret` on `kabooz login`: fetch the current
-  Qobuz web-player `app_secret` from the JS bundle. Would fix Issue
-  #1 automatically if the root cause is a stale secret. Pure
-  scraping; users who supply their own secret are unaffected. Not
-  started;
 - Cache album-level cover art between tracks within a single
   `download_album` run. Currently re-downloads the cover art per
   track when `--cover` is used. For a 14-track album that is 14
   identical HTTP GETs to the CDN. Low-impact on wired networks,
   noticeable on mobile.
+
+#### FEATURES
+
+Seven feature requests queued. No implementation started. Design
+decisions captured here so the next session has full context.
+
+- [ ] **#1: Qobuz IDs in tagged metadata.**
+      Write `QOBUZ_TRACK_ID`, `QOBUZ_ALBUM_ID`, `QOBUZ_ARTIST_ID`,
+      `QOBUZ_UPC` to FLAC Vorbis Comments and MP3 `TXXX` frames.
+      Naming consistent with existing `MUSICBRAINZ_*` tags.
+      Files: `tagger.py` only. Effort: ~30 min.
+
+- [ ] **#4: Cover art swap.**
+      Currently embeds full-res `_org.jpg` (up to 3+ MB for some
+      albums) and saves 600×600 to `cover.jpg`. Intended: embed
+      600×600 (UI read, smaller audio file), save full-res to
+      `cover.jpg` (archival; user can inspect/extract). Files:
+      `tagger.py`, `session._save_cover_file`. Effort: ~15 min.
+
+- [ ] **#3: Lyrics tag mapping.**
+      Target player: Musicolet. Musicolet reads `LYRICS` and parses
+      LRC if present, falls back to plain text if not.
+      Default mapping:
+      · `LYRICS` — synced LRC when available; else plain (timestamps
+        stripped)
+      · `UNSYNCEDLYRICS` — plain, always (harmless; some players
+        only read this tag)
+      · `SYNCEDLYRICS` — not written by default
+      Trade-off: players that read `LYRICS` but do not parse LRC
+      (e.g. older desktop players) will show raw `[mm:ss.xx]`
+      brackets. Config override to write to `SYNCEDLYRICS` instead
+      for users of those players.
+      Config additions:
+      ```toml
+      [tagging]
+      # Where synced lyrics go.
+      #   "lyrics"       — LYRICS gets synced LRC (Musicolet, some
+      #                    Android players)
+      #   "syncedlyrics" — SYNCEDLYRICS gets synced LRC, LYRICS
+      #                    keeps plain (foobar2000, MusicBee)
+      #   "both"         — write to both tags
+      #   "none"         — do not write synced lyrics at all
+      synced_tag = "lyrics"
+
+      # Write a .lrc file alongside the audio file.
+      save_lrc_file = false
+      ```
+      Files: `tagger.py`, `config.py`. Effort: ~30 min.
+
+- [ ] **#7: Ranged album/playlist download.**
+      Two-tier syntax, unambiguous:
+      ```bash
+      # Global indices (1-based, inclusive)
+      kabooz album <id> --start 3 --end 5
+      kabooz album <id> --start 10
+
+      # Per-disc
+      kabooz album <id> --disc 2
+      kabooz album <id> --disc 2 --start 3 --end 5
+
+      # Playlists (no --disc)
+      kabooz playlist <id> --start 50 --end 100
+      ```
+      Rules:
+      · `--start` and `--end` are 1-based, inclusive.
+      · Default `--start=1`, `--end=∞`.
+      · `--disc N` alone — all tracks of disc N.
+      · `--disc` given — `--start/--end` are per-disc indices.
+      · `--disc` omitted — `--start/--end` are global indices.
+      · `--disc` on a playlist — error, playlists have no disc
+        structure.
+      Files: `cli.py`, `session.py`. Effort: 1–2 hr.
+
+- [ ] **#2: Stream URL command.**
+      ```bash
+      kabooz url <track_id>                 # bare URL to stdout
+      kabooz url <track_id> --json          # all fields
+      kabooz url <track_id> --field url     # one field
+      kabooz url <track_id> -q cd --report  # opt into reporting
+      ```
+      Design:
+      · **Stream reporting is OFF by default.** `--report` opts in.
+        Rationale: `kabooz url … | xargs curl` in a script must not
+        create false play events for Qobuz analytics.
+      · Fast path (bare URL) resolves nothing beyond
+        `get_track_url` — no album, no artist, no JSON beyond the
+        one field.
+      · All flags opt-in. Default output is one line, no fluff.
+      Files: `cli.py`, `session.py` (thin wrapper preserving the
+      "business logic in session" rule). Effort: 1–2 hr.
+
+- [ ] **#6: FLAC MD5 fix.**
+      Confirmed: Qobuz zeroes the MD5 in STREAMINFO for downloaded
+      FLACs. `metaflac --set-md5sum <file>` recomputes from decoded
+      audio without re-encoding, ~1–2 s per hi-res track.
+      **Requires `flac >= 1.4.0`** for the flag. Detect at startup,
+      skip with one-line warning if absent. **No re-encode fallback**
+      (`flac -0`) — rejected explicitly by user as against the
+      "boring and predictable" principle; users who want re-encode
+      use the `external_processor` hook from #5.
+      NOTE: the recomputed MD5 verifies the **local copy is intact
+      at rest**, not that it matches Qobuz's source (which was
+      likely transcoded before delivery — hence the zeroed MD5 in
+      the first place).
+      Config: `download.fix_flac_md5 = false` (default off, keeps
+      downloads lean). Files: `downloader.py`, `config.py`.
+      Effort: 1–2 hr.
+
+- [ ] **#5: Config discipline + post-processing hooks.**
+      Not one feature — a direction applied across #1, #3, #4, #6
+      as they land. Concrete pieces, each its own commit:
+      · Quality fine-tuning — constrain maximum bit depth / sample
+        rate (e.g. `download.max_bit_depth = 24`)
+      · `external_processor` shell hook — runs **after** tagging,
+        like `external_downloader` runs **instead of** downloading.
+        Template:
+        `"flac -0 --force {file}"` for re-encode, or anything else
+        a power user wants.
+      · Audit of existing per-command overrides for tag/cover/
+        lyrics flags; fill gaps.
+      Files: `config.py`, `downloader.py`, `session.py`, `cli.py`.
+      Effort: ongoing, spread across other features.
+
+- **Recommended order:** 1 → 4 → 3 → 7 → 2 → 6 → 5.
+  · 1 and 4 are tagger-only, small, independently verifiable by
+    inspecting the output file.
+  · 3 is tagger + config, follows naturally after 1 and 4.
+  · 7 and 2 are session-layer changes with CLI surface.
+  · 6 is one more downloader hook.
+  · 5 is iterative; applied per-feature rather than as one commit.
