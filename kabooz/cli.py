@@ -592,7 +592,6 @@ def album(
             "Test with:\n"
             "    [dim]curl -v 'https://musicbrainz.org/ws/2/isrc/TEST?fmt=json'[/dim]\n"
             "  [dim]·[/dim] The ISRCs are not in MusicBrainz's database "
-            "(common for older and classical recordings)."
         )
 
 # ══════════════════════════════════════════════════════════════════════════
