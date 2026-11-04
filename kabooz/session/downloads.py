@@ -12,8 +12,6 @@ Public import path unchanged.
 from __future__ import annotations
 
 import dataclasses
-import subprocess
-import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -102,63 +100,6 @@ def _slice_range(
     return indexed[start - 1:end_actual]
 
 
-_flac_version_cache: Optional[bool] = None
-
-
-def _flac_version_ok() -> bool:
-    """True if system metaflac supports --set-md5sum (>= 1.4.0)."""
-    global _flac_version_cache
-    if _flac_version_cache is not None:
-        return _flac_version_cache
-    try:
-        r = subprocess.run(["metaflac", "--version"], capture_output=True, timeout=5)
-        if r.returncode != 0:
-            _flac_version_cache = False
-            return False
-        first = r.stdout.decode(errors="replace").splitlines()[0]
-        m = re.search(r"(\d+)\.(\d+)", first)
-        if not m:
-            _flac_version_cache = False
-            return False
-        _flac_version_cache = (int(m.group(1)), int(m.group(2))) >= (1, 4)
-    except Exception:
-        _flac_version_cache = False
-    return _flac_version_cache
-
-
-def _maybe_fix_flac_md5(path: Path) -> bool:
-    """
-    Recompute FLAC STREAMINFO MD5 via metaflac --set-md5sum.
-
-    Qobuz serves FLAC with a zeroed MD5. This verifies local integrity
-    at rest, not source match (source was transcoded pre-delivery).
-    Requires flac >= 1.4.0. Skips silently otherwise. Never raises.
-    """
-    from ..dev import dev_log
-    suffix = path.suffix.lower()
-    if suffix == ".part":
-        suffix = Path(path.stem).suffix.lower()
-    if suffix != ".flac":
-        return False
-    if not _flac_version_ok():
-        dev_log("[yellow]fix_flac_md5: metaflac >= 1.4.0 required, skipping[/yellow]")
-        return False
-    try:
-        r = subprocess.run(
-            ["metaflac", "--set-md5sum", str(path)],
-            capture_output=True, timeout=60,
-        )
-    except Exception as exc:
-        dev_log(f"[yellow]fix_flac_md5 error: {exc}[/yellow]")
-        return False
-    if r.returncode == 0:
-        dev_log(f"MD5 recomputed → {path.name}")
-        return True
-    err = r.stderr.decode(errors="replace").strip()[:200]
-    dev_log(f"[yellow]fix_flac_md5 failed (exit {r.returncode}): {err}[/yellow]")
-    return False
-
-
 class DownloadsMixin:
     """Mixin providing download_* and their helpers.
     Composed into QobuzSession via class inheritance. Methods assume
@@ -244,14 +185,6 @@ class DownloadsMixin:
             if mb_result.found:
                 apply_mb_tags(result.path, mb_result)
                 mb_enriched = True
-
-        # Optional FLAC MD5 fix (feature #6). Runs before _finalise.
-        if (
-            cfg.download.fix_flac_md5
-            and not result.dev_stub
-            and not self._dev
-        ):
-            _maybe_fix_flac_md5(result.path)
 
         # ── Rename .part → final ──────────────────────────────────────────
         # Every pipeline step that writes to the file is done. Only now do
