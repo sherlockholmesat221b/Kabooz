@@ -35,6 +35,11 @@ from ..quality import Quality
 from ..session import QobuzSession, _parse_quality
 from ..url import parse_url
 
+from ._app import (
+    app, library_app, lpl_app, export_app,
+    account_app, remote_app, _session,
+)
+
 from .helpers import (
     _cfg,
     _cover_size,
@@ -55,23 +60,6 @@ from .helpers import (
 )
 
 # ── Sub-apps ───────────────────────────────────────────────────────────────
-
-app         = typer.Typer(name="qobuz", add_completion=False,
-                          invoke_without_command=True,
-                          help="Unofficial Qobuz CLI.")
-library_app = typer.Typer(help="Manage local and remote favourites.")
-lpl_app     = typer.Typer(help="Create, manage, and share local playlists.")
-export_app  = typer.Typer(help="Export, import, and back up your library.")
-account_app = typer.Typer(help="View and update your Qobuz account profile.")
-remote_app  = typer.Typer(help="Manage playlists on your Qobuz account.")
-
-app.add_typer(library_app, name="library")
-app.add_typer(lpl_app,     name="lpl")
-app.add_typer(export_app,  name="export")
-app.add_typer(account_app, name="account")
-app.add_typer(remote_app,  name="remote")
-
-_dev: bool  = False
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -101,8 +89,8 @@ def main(
     ),
 ) -> None:
     """Unofficial Qobuz CLI."""
-    global _dev
-    _dev = dev
+    from . import _app as _app_mod
+    _app_mod._dev = dev
     if dev:
         from .. import dev as _dev_module
         _dev_module.enable()
@@ -166,10 +154,6 @@ def main(
 
 
 # ── Shared session factory ─────────────────────────────────────────────────
-
-
-def _session(cfg: Optional[QobuzConfig] = None) -> QobuzSession:
-    return QobuzSession.from_config(dev=_dev)
 
 
 # ══════════════════════════════════════════════════════════════════════════
