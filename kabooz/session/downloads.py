@@ -44,6 +44,65 @@ from ._types import (
 )
 
 
+def _slice_range(
+    items,
+    *,
+    start: int = 1,
+    end: int | None = None,
+    disc: int | None = None,
+    warnings_out: list[str] | None = None,
+):
+    """
+    Slice an ordered collection by 1-based inclusive range, with
+    optional disc filtering.
+
+    Returns list of (original_position, item) tuples.
+
+    warnings_out: optional list. When provided, harmless-but-
+    probably-unintentional conditions append a warning string.
+    """
+    indexed = list(enumerate(items, 1))
+
+    if disc is not None:
+        if disc == 1 and warnings_out is not None and items:
+            all_monodisc = all(
+                (getattr(it, "media_number", None) or 1) == 1
+                for it in items
+            )
+            if all_monodisc:
+                warnings_out.append(
+                    "--disc 1 had no effect (album has only one disc)"
+                )
+        indexed = [
+            (i, it) for i, it in indexed
+            if (getattr(it, "media_number", None) or 1) == disc
+        ]
+        if not indexed:
+            raise ValueError(f"disc {disc} not found in collection")
+
+    n = len(indexed)
+    if start > n:
+        raise ValueError(
+            f"start={start} exceeds available count ({n})"
+        )
+
+    if end is not None and end > n:
+        if warnings_out is not None:
+            warnings_out.append(
+                f"end={end} exceeded available count ({n}); using {n}"
+            )
+        end_actual = n
+    else:
+        end_actual = n if end is None else end
+
+    if end_actual < start:
+        raise ValueError(
+            f"end={end} is less than start={start}"
+        )
+
+    return indexed[start - 1:end_actual]
+
+
 class DownloadsMixin:
     """Mixin providing download_* and their helpers.
     Composed into QobuzSession via class inheritance. Methods assume
