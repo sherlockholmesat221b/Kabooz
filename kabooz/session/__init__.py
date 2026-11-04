@@ -76,6 +76,7 @@ from .catalog import CatalogMixin
 from .streaming import StreamingMixin
 from .favorites import FavoritesMixin
 from .playlists import PlaylistsMixin
+from .account import AccountMixin
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -88,6 +89,7 @@ class QobuzSession(
     StreamingMixin,
     FavoritesMixin,
     PlaylistsMixin,
+    AccountMixin,
 ):
 
     def __init__(
@@ -462,16 +464,8 @@ class QobuzSession(
     # Account
     # ══════════════════════════════════════════════════════════════════════
 
-    def get_profile(self) -> UserProfile:
-        return self.client.get_user_info()
 
-    def update_profile(self, **kwargs: Any) -> UserProfile:
-        return self.client.update_user(**kwargs)
 
-    def change_password(
-        self, current_password: str, new_password: str,
-    ) -> None:
-        self.client.update_password(current_password, new_password)
 
     # ══════════════════════════════════════════════════════════════════════
     # Export / backup
