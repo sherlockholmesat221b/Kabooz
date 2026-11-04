@@ -16,11 +16,6 @@ so it is equally callable from a plain Python script.
 """
 from __future__ import annotations
 
-import dataclasses
-import threading
-import time
-import httpx
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Generator, Optional
 
