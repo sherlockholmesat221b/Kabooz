@@ -53,6 +53,32 @@ class StreamingMixin:
             mime_type     = url_info.get("mime_type", "audio/flac"),
         )
 
+    def resolve_stream(
+        self,
+        track_id: str | int,
+        quality: Quality = Quality.HI_RES,
+        report: bool = False,
+    ) -> StreamInfo:
+        """
+        Resolve a track to its CDN stream URL, without automatic reporting.
+
+        Silent by default — suited to scripts that only need the URL.
+        Pass report=True to opt in to reporting stream start to Qobuz
+        (useful when the caller will actually play the URL).
+        """
+        url_info = self.client.get_track_url(str(track_id), quality=quality)
+        fmt_id = url_info.get("format_id", int(quality))
+        if report:
+            self._reporter.start(str(track_id), format_id=int(fmt_id))
+        return StreamInfo(
+            track_id=str(track_id),
+            url=url_info["url"],
+            format_id=int(fmt_id),
+            bit_depth=url_info.get("bit_depth"),
+            sampling_rate=url_info.get("sampling_rate"),
+            mime_type=url_info.get("mime_type", "audio/flac"),
+        )
+
     def report_stream_end(
         self,
         track_id: str | int,
