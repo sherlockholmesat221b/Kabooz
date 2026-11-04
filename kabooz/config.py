@@ -30,6 +30,7 @@ class DownloadConfig:
     quality:             str   = "hi_res"
     max_workers:         int   = 1
     max_retries:         int   = 2
+    fix_flac_md5:        bool  = False
     external_downloader: str   = ""
     read_timeout:        float = 300.0
     connect_timeout:     float = 10.0
@@ -154,6 +155,8 @@ def validate_config(cfg: QobuzConfig) -> None:
         raise ConfigError(f"download.max_workers={d.max_workers} must be >= 1.")
     if not (0 <= d.max_retries <= 10):
         raise ConfigError(f"download.max_retries={d.max_retries} must be between 0 and 10.")
+    if not isinstance(d.fix_flac_md5, bool):
+        raise ConfigError("download.fix_flac_md5 must be true or false.")
     if d.read_timeout <= 0:
         raise ConfigError(f"download.read_timeout={d.read_timeout} must be > 0.")
     if d.connect_timeout <= 0:
@@ -254,6 +257,8 @@ def load_config(path: Path = _CONFIG_PATH) -> QobuzConfig:
             output_dir          = d.get("output_dir",          cfg.download.output_dir),
             quality             = d.get("quality",             cfg.download.quality),
             max_workers         = d.get("max_workers",         cfg.download.max_workers),
+            max_retries         = d.get("max_retries",         cfg.download.max_retries),
+            fix_flac_md5        = d.get("fix_flac_md5",        cfg.download.fix_flac_md5),
             external_downloader = d.get("external_downloader", cfg.download.external_downloader),
             read_timeout        = d.get("read_timeout",        cfg.download.read_timeout),
             connect_timeout     = d.get("connect_timeout",     cfg.download.connect_timeout),
