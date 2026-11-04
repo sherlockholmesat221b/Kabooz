@@ -458,3 +458,57 @@ kabooz export restore backup.tar.gz
 kabooz export restore backup.tar.gz --no-favorites --db  # Restore DB only
 ```
 
+
+
+## Ranged download (feature #7)
+
+Slice an album, playlist, or artist discography.
+
+### Album
+
+    kabooz album <id> --start 3 --end 5
+    kabooz album <id> --start 10
+    kabooz album <id> --end 5
+    kabooz album <id> --disc 2
+    kabooz album <id> --disc 2 --start 3 --end 5
+
+Rules:
+- --start and --end are 1-based, inclusive
+- Defaults: --start=1, --end=infinity (clamped to available)
+- Without --disc: indices are global across the album
+- With --disc N: indices are per-disc within disc N
+- --disc 1 on a monodisc album: valid, warns (no-op)
+- --disc 2 on a monodisc album: errors
+
+### Playlist
+
+    kabooz playlist <id> --start 50 --end 100
+
+- 1-based indices over playlist positions
+- {index} template preserves original playlist positions
+- --disc not accepted
+
+### Artist
+
+    kabooz artist <id> --start 5 --end 10
+
+- 1-based indices over the release list, NOT tracks
+- --start 5 --end 10 downloads releases 5-10
+- --disc not accepted
+
+### Warnings
+
+Harmless-but-probably-unintentional conditions warn on stderr:
+
+    warning: end=N exceeded available count (M); using M
+    warning: --disc 1 had no effect (album has only one disc)
+
+Suppress with --no-warnings. Warnings go to stderr, never stdout.
+
+### Invalid ranges (error before any API call)
+
+    Invalid range: start=N exceeds available count (M)
+    Invalid range: end=X is less than start=Y
+    Invalid range: disc N not found in collection
+
+--end is silently clamped. --start beyond the end errors.
