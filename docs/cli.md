@@ -512,3 +512,37 @@ Suppress with --no-warnings. Warnings go to stderr, never stdout.
     Invalid range: disc N not found in collection
 
 --end is silently clamped. --start beyond the end errors.
+
+
+### Stream URL command
+
+Resolve a track to its CDN stream URL. The URL expires in roughly
+30 minutes; it is intended for immediate use by a player or script.
+
+    kabooz url <id>                        # bare URL, one line
+    kabooz url <id> --json                 # {"url": "..."}
+    kabooz url <id> --field bit_depth      # bare value
+    kabooz url <id> --field url,title      # two values, newline-separated
+    kabooz url <id> --field url,title --json
+    kabooz url <id> --report | xargs mpv   # opt in to reporting
+
+--json controls format only, not content. To change which fields are
+resolved, use --field.
+
+Field lists:
+  URL-only (one API call):
+    track_id, url, format_id, format, mime_type, bit_depth,
+    sampling_rate, quality_label, requested_quality, reported
+  Metadata (extra API call):
+    title, artist, album, album_id, duration, isrc, composer,
+    work, year, genre
+
+Multiple values without --json are newline-separated, one per line,
+in requested order. With --json, an object containing exactly the
+requested keys (null when a value cannot be resolved).
+
+Stream reporting:
+- Download commands: never report
+- TUI playback: always reports start/end
+- kabooz url: silent by default; use --report to opt in (needed
+  when piping to a real player, not needed for `xargs curl`)
