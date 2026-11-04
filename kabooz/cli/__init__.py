@@ -1,4 +1,4 @@
-# qobuz_py/cli.py
+# kabooz/cli/__init__.py
 from __future__ import annotations
 
 import os
@@ -22,18 +22,18 @@ except ImportError:
     )
     sys.exit(1)
 
-from .config import (
+from ..config import (
     QobuzConfig, _CONFIG_PATH, _SESSION_PATH,
     load_config, save_config, update_config,
 )
-from .exceptions import (
+from ..exceptions import (
     APIError, ConfigError, InvalidCredentialsError,
     NoAuthError, NotFoundError, NotStreamableError,
     PoolModeError, TokenExpiredError,
 )
-from .quality import Quality
-from .session import QobuzSession, _parse_quality
-from .url import parse_url
+from ..quality import Quality
+from ..session import QobuzSession, _parse_quality
+from ..url import parse_url
 
 # ── Sub-apps ───────────────────────────────────────────────────────────────
 
@@ -225,7 +225,7 @@ def main(
     global _dev
     _dev = dev
     if dev:
-        from . import dev as _dev_module
+        from .. import dev as _dev_module
         _dev_module.enable()
         err_console.print(
             "[yellow bold][DEV MODE][/yellow bold] "
@@ -326,7 +326,7 @@ def login(
     2. Direct token:         kabooz login --token TOKEN --user-id 12345
     3. Token pool:           kabooz login --pool ~/.config/kabooz/pool.txt
     """
-    from .client import QobuzClient
+    from ..client import QobuzClient
     cfg = _cfg()
 
     if pool:
@@ -460,7 +460,7 @@ def dev_cache(
     show:  bool = typer.Option(False, "--show"),
 ) -> None:
     """Manage the dev mode API response cache."""
-    from .dev import CACHE_DIR, clear_cache
+    from ..dev import CACHE_DIR, clear_cache
     if clear:
         console.print(f"[green]Cleared {clear_cache()} cached response(s).[/green]")
         return
@@ -726,7 +726,7 @@ def _display_album_info(album) -> None:
     )
     year   = album.release_date_original[:4] if album.release_date_original else ""
 
-    from .download.naming import quality_tag
+    from ..download.naming import quality_tag
     fmt = quality_tag(album.maximum_bit_depth, album.maximum_sampling_rate)
 
     # Build subtitle line: artist · genre · year · label
@@ -791,7 +791,7 @@ def _display_album_info(album) -> None:
 
 def _display_track_info(track) -> None:
     from rich.panel import Panel
-    from .download.naming import quality_tag
+    from ..download.naming import quality_tag
 
     artist  = track.performer.name if track.performer else ""
     composer = track.composer.name if track.composer  else ""
