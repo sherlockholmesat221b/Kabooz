@@ -12,6 +12,9 @@ Public import path unchanged.
 from __future__ import annotations
 
 import dataclasses
+import subprocess
+import shutil
+import hashlib
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -100,6 +103,104 @@ def _slice_range(
     return indexed[start - 1:end_actual]
 
 
+def _compute_flac_pcm_md5(path: Path) -> Optional[str]:
+    """
+    Decode a FLAC file to raw PCM and return the MD5 hex digest of the
+    uncompressed audio samples.
+
+    The FLAC STREAMINFO MD5 is defined as the MD5 of the unencoded
+    (PCM) audio — not of the file bytes. Computing it requires decoding
+    the audio first, which `flac -ds --stdout` does.
+
+    Returns 32-char hex string, or None on failure. Never raises.
+    """
+    if not shutil.which("flac"):
+        return None
+    h = hashlib.md5()
+    try:
+        proc = subprocess.Popen(
+            [
+                "flac", "-ds", "--stdout",
+                "--force-raw-format", "--endian=little", "--sign=signed",
+                str(path),
+            ],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        while True:
+            chunk = proc.stdout.read(512 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+        proc.wait(timeout=120)
+        if proc.returncode != 0:
+            return None
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def _maybe_fix_flac_md5(path: Path) -> bool:
+    """
+    Recompute and write the FLAC STREAMINFO MD5.
+
+    Decodes audio via `flac -ds --stdout`, hashes the PCM stream with
+    MD5, then writes the computed hex digest into the file via
+    `metaflac --set-md5sum=<hash>`.
+
+    Raises ConfigError if `fix_flac_md5=true` but flac/metaflac are not
+    installed — fail-fast, so the user notices immediately rather than
+    getting silently zeroed MD5s.
+
+    Returns True on success, False on runtime failure (decode error,
+    metaflac write error). Never raises other than ConfigError.
+
+    Caveat: the recomputed MD5 verifies that the local copy is intact
+    at rest. It does NOT prove the file matches Qobuz's source — the
+    source was transcoded before delivery, which is exactly why the
+    original MD5 was zeroed.
+    """
+    from ..dev import dev_log
+    from ..exceptions import ConfigError
+
+    suffix = path.suffix.lower()
+    if suffix == ".part":
+        suffix = Path(path.stem).suffix.lower()
+    if suffix != ".flac":
+        return False
+
+    if not shutil.which("flac"):
+        raise ConfigError(
+            "download.fix_flac_md5 is enabled but `flac` is not installed. "
+            "Install flac (Termux: pkg install flac) or disable the feature."
+        )
+    if not shutil.which("metaflac"):
+        raise ConfigError(
+            "download.fix_flac_md5 is enabled but `metaflac` is not installed. "
+            "Install flac (Termux: pkg install flac) or disable the feature."
+        )
+
+    md5_hex = _compute_flac_pcm_md5(path)
+    if md5_hex is None:
+        dev_log(f"[yellow]fix_flac_md5: decode failed for {path.name}[/yellow]")
+        return False
+
+    try:
+        r = subprocess.run(
+            ["metaflac", f"--set-md5sum={md5_hex}", str(path)],
+            capture_output=True, timeout=60,
+        )
+    except Exception as exc:
+        dev_log(f"[yellow]fix_flac_md5 error: {exc}[/yellow]")
+        return False
+
+    if r.returncode == 0:
+        dev_log(f"MD5 recomputed → {path.name}")
+        return True
+    err = r.stderr.decode(errors="replace").strip()[:200]
+    dev_log(f"[yellow]fix_flac_md5 failed (exit {r.returncode}): {err}[/yellow]")
+    return False
+
+
 class DownloadsMixin:
     """Mixin providing download_* and their helpers.
     Composed into QobuzSession via class inheritance. Methods assume
@@ -185,6 +286,14 @@ class DownloadsMixin:
             if mb_result.found:
                 apply_mb_tags(result.path, mb_result)
                 mb_enriched = True
+
+        # Optional FLAC MD5 fix (feature #6). Runs before _finalise.
+        if (
+            cfg.download.fix_flac_md5
+            and not result.dev_stub
+            and not self._dev
+        ):
+            _maybe_fix_flac_md5(result.path)
 
         # ── Rename .part → final ──────────────────────────────────────────
         # Every pipeline step that writes to the file is done. Only now do
