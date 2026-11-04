@@ -41,6 +41,44 @@ def _lrc_to_plain(lrc: str) -> str:
             lines.append(cleaned)
     return "\n".join(lines)
 
+def _resolve_lyric_text(
+    mode: str,
+    plain: Optional[str],
+    synced: Optional[str],
+) -> Optional[str]:
+    """
+    Resolve a per-tag mode against available lyric sources.
+
+    Values:
+        "synced" — LRC text only; skip if not available
+        "plain"  — plain text only; skip if not available
+        "best"   — LRC if available, else plain
+        "none"   — skip this tag entirely
+
+    Returns None when the tag should not be written.
+    """
+    if mode == "none":
+        return None
+    if mode == "synced":
+        return synced
+    if mode == "plain":
+        return plain
+    if mode == "best":
+        return synced or plain
+    raise ValueError(f"Unknown lyric mode: {mode!r}")
+
+
+def _apply_vorbis_lyrics(
+    audio,
+    tag: str,
+    mode: str,
+    plain: Optional[str],
+    synced: Optional[str],
+) -> None:
+    """Write a Vorbis lyric tag according to its mode."""
+    text = _resolve_lyric_text(mode, plain, synced)
+    if text:
+        audio[tag] = text
 
 # ── Tagger ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +120,7 @@ class Tagger:
         album: Optional[Album] = None,
         lyrics: Optional[LyricsResult] = None,
         embed_cover: bool = True,
+        tagging_config: Optional["TaggingConfig"] = None,
     ) -> None:
         """
         Write metadata tags to the audio file at path.
@@ -100,6 +139,10 @@ class Tagger:
 
         path = Path(path)
         suffix = path.suffix.lower()
+
+        if tagging_config is None:
+            from ..config import TaggingConfig
+            tagging_config = TaggingConfig()
 
         # When called by session._post_download(), the file still has the
         # .part extension (rename to final path happens after tagging).
@@ -143,9 +186,13 @@ class Tagger:
         )
 
         if suffix == ".flac":
-            self._tag_flac(path, track, album, lyrics, cover_data, credits)
+            self._tag_flac(
+                path, track, album, lyrics, cover_data, credits, tagging_config,
+            )
         elif suffix == ".mp3":
-            self._tag_mp3(path, track, album, lyrics, cover_data, credits)
+            self._tag_mp3(
+                path, track, album, lyrics, cover_data, credits, tagging_config,
+            )
         else:
             raise ValueError(f"Unsupported audio format: {suffix}")
 
@@ -161,6 +208,7 @@ class Tagger:
         lyrics: Optional[LyricsResult],
         cover_data: Optional[bytes],
         credits,
+        tagging_config,
     ) -> None:
         """
         Write Vorbis Comment tags to a FLAC file.
@@ -292,19 +340,36 @@ class Tagger:
                 audio["REPLAYGAIN_TRACK_PEAK"] = f"{ai.replaygain_track_peak:.6f}"
 
         # ── Lyrics ────────────────────────────────────────────────────────
+        #
+        # Each Vorbis tag is controlled independently by tagging_config.
+        # Values: "synced" | "plain" | "best" | "none".
+        #
+        # Empirical note (Musicolet, scripts/test_flac_lyrics.py):
+        #   Musicolet prefers UNSYNCEDLYRICS over LYRICS when both are
+        #   present, and shows static text even when LYRICS contains
+        #   valid LRC. Users targeting Musicolet should keep
+        #   flac_unsynced_lyrics="none" and flac_synced_lyrics="none".
         if lyrics and lyrics.found:
-            # LYRICS is a plain-text tag. If we only have synced LRC, strip
-            # the [mm:ss.xx] timestamp prefixes before writing — players that
-            # display LYRICS are not LRC-aware and would show raw markers.
             plain_text = lyrics.plain or (
                 _lrc_to_plain(lyrics.synced) if lyrics.synced else None
             )
-            if plain_text:
-                audio["LYRICS"] = plain_text
+            synced_text = lyrics.synced
 
-            # SYNCEDLYRICS carries the full LRC string verbatim.
-            if lyrics.synced:
-                audio["SYNCEDLYRICS"] = lyrics.synced
+            _apply_vorbis_lyrics(
+                audio, "LYRICS",
+                tagging_config.flac_lyrics,
+                plain_text, synced_text,
+            )
+            _apply_vorbis_lyrics(
+                audio, "UNSYNCEDLYRICS",
+                tagging_config.flac_unsynced_lyrics,
+                plain_text, synced_text,
+            )
+            _apply_vorbis_lyrics(
+                audio, "SYNCEDLYRICS",
+                tagging_config.flac_synced_lyrics,
+                plain_text, synced_text,
+            )
 
         # ── Cover art ─────────────────────────────────────────────────────
         if cover_data:
@@ -327,6 +392,7 @@ class Tagger:
         lyrics: Optional[LyricsResult],
         cover_data: Optional[bytes],
         credits,
+        tagging_config,
     ) -> None:
         """
         Write ID3v2.4 tags to an MP3 file.
@@ -468,25 +534,43 @@ class Tagger:
                 ))
 
         # ── Lyrics ────────────────────────────────────────────────────────
+        #
+        # Each ID3 frame is controlled independently by tagging_config.
+        # USLT and TXXX:UNSYNCEDLYRICS accept all four modes; SYLT is
+        # binary and only accepts "synced" / "none".
+        #
+        # Empirical note (Musicolet, scripts/test_mp3_lyrics.py):
+        #   Musicolet reads only USLT and parses LRC inside it. SYLT and
+        #   TXXX:UNSYNCEDLYRICS are ignored entirely by Musicolet but
+        #   may be read by other players (foobar2000, MusicBee).
         if lyrics and lyrics.found:
-            # USLT is Unsynchronised Lyrics — plain text only. Never write
-            # raw LRC (which contains [mm:ss.xx] markers) into this frame;
-            # players that read USLT are not LRC-aware and will display the
-            # markers literally. Strip timestamps if we only have synced.
             plain_text = lyrics.plain or (
                 _lrc_to_plain(lyrics.synced) if lyrics.synced else None
             )
-            if plain_text:
+            synced_text = lyrics.synced
+
+            uslt_text = _resolve_lyric_text(
+                tagging_config.mp3_uslt, plain_text, synced_text,
+            )
+            if uslt_text:
                 audio["USLT"] = USLT(
-                    encoding=3, lang="eng", desc="", text=plain_text
+                    encoding=3, lang="eng", desc="", text=uslt_text,
                 )
 
-            # SYLT carries the properly parsed (text, ms) pairs from the LRC.
-            if lyrics.synced:
-                sylt_data = _parse_lrc_to_sylt(lyrics.synced)
+            txxx_text = _resolve_lyric_text(
+                tagging_config.mp3_txxx_unsynced, plain_text, synced_text,
+            )
+            if txxx_text:
+                audio.add(TXXX(
+                    encoding=3, desc="UNSYNCEDLYRICS", text=txxx_text,
+                ))
+
+            if tagging_config.mp3_sylt == "synced" and synced_text:
+                sylt_data = _parse_lrc_to_sylt(synced_text)
                 if sylt_data:
                     audio["SYLT"] = SYLT(
-                        encoding=3, lang="eng", format=2, type=1, text=sylt_data
+                        encoding=3, lang="eng", format=2, type=1,
+                        text=sylt_data,
                     )
 
         # ── Cover art ─────────────────────────────────────────────────────

@@ -231,17 +231,22 @@ def test_flac_plain_lyrics(tmp_path):
     assert audio["LYRICS"] == ["One more time"]
 
 
-def test_flac_synced_lyrics(tmp_path):
+def test_flac_synced_lyrics_tag_when_configured(tmp_path):
+    """SYNCEDLYRICS tag is written when flac_synced_lyrics='synced'.
+    This was the v0.1.0 default behaviour, now opt-in via config."""
+    from kabooz.config import TaggingConfig
     path = tmp_path / "track.flac"
     make_flac(path)
 
     lyrics = LyricsResult(synced="[00:01.00] One more time", found=True)
     tagger = Tagger()
-    tagger.tag(path, make_track(), embed_cover=False, lyrics=lyrics)
+    tagger.tag(
+        path, make_track(), embed_cover=False, lyrics=lyrics,
+        tagging_config=TaggingConfig(flac_synced_lyrics="synced"),
+    )
 
     audio = FLAC(path)
     assert audio["SYNCEDLYRICS"] == ["[00:01.00] One more time"]
-
 
 def test_flac_cover_art(tmp_path):
     path = tmp_path / "track.flac"
@@ -439,3 +444,112 @@ def test_flac_embeds_large_cover_not_original(tmp_path):
     assert captured["url"] is not None
     assert "_600." in captured["url"]
     assert "_org." not in captured["url"]
+
+
+def _lyrics_fixture():
+    return LyricsResult(
+        synced="[00:01.00] One more time",
+        plain="One more time",
+        found=True,
+    )
+
+
+def test_flac_lyrics_default_writes_only_lyrics_tag(tmp_path):
+    """Defaults: flac_lyrics='best', others 'none'. Musicolet-compatible."""
+    path = tmp_path / "track.flac"
+    make_flac(path)
+    Tagger().tag(path, make_track(), album=None,
+                 lyrics=_lyrics_fixture(), embed_cover=False)
+    audio = FLAC(path)
+    assert audio["LYRICS"] == ["[00:01.00] One more time"]
+    assert "UNSYNCEDLYRICS" not in audio
+    assert "SYNCEDLYRICS" not in audio
+
+
+def test_flac_lyrics_per_tag_control(tmp_path):
+    """Each Vorbis tag independently controlled by its own field."""
+    from kabooz.config import TaggingConfig
+    path = tmp_path / "track.flac"
+    make_flac(path)
+    cfg = TaggingConfig(
+        flac_lyrics="plain",
+        flac_unsynced_lyrics="plain",
+        flac_synced_lyrics="synced",
+    )
+    Tagger().tag(path, make_track(), album=None,
+                 lyrics=_lyrics_fixture(), embed_cover=False,
+                 tagging_config=cfg)
+    audio = FLAC(path)
+    assert audio["LYRICS"] == ["One more time"]            # plain
+    assert audio["UNSYNCEDLYRICS"] == ["One more time"]    # plain
+    assert audio["SYNCEDLYRICS"] == ["[00:01.00] One more time"]  # synced
+
+
+def test_flac_lyrics_none_skips_tag(tmp_path):
+    """'none' skips the tag even when lyrics are available."""
+    from kabooz.config import TaggingConfig
+    path = tmp_path / "track.flac"
+    make_flac(path)
+    cfg = TaggingConfig(flac_lyrics="none")
+    Tagger().tag(path, make_track(), album=None,
+                 lyrics=_lyrics_fixture(), embed_cover=False,
+                 tagging_config=cfg)
+    audio = FLAC(path)
+    assert "LYRICS" not in audio
+
+
+def test_flac_lyrics_synced_mode_skips_when_no_synced_available(tmp_path):
+    """'synced' writes nothing if only plain lyrics exist."""
+    from kabooz.config import TaggingConfig
+    path = tmp_path / "track.flac"
+    make_flac(path)
+    cfg = TaggingConfig(flac_lyrics="synced")
+    plain_only = LyricsResult(synced=None, plain="One more time", found=True)
+    Tagger().tag(path, make_track(), album=None,
+                 lyrics=plain_only, embed_cover=False,
+                 tagging_config=cfg)
+    audio = FLAC(path)
+    assert "LYRICS" not in audio
+
+
+def test_mp3_lyrics_default_writes_only_uslt(tmp_path):
+    """MP3 defaults: USLT='best', TXXX/SYLT 'none'."""
+    path = tmp_path / "track.mp3"
+    make_mp3(path)
+    Tagger().tag(path, make_track(), album=None,
+                 lyrics=_lyrics_fixture(), embed_cover=False)
+    tags = ID3(path)
+    uslt = tags.getall("USLT")
+    assert uslt, "expected at least one USLT frame"
+    assert uslt[0].text == "[00:01.00] One more time"
+    assert not tags.getall("SYLT")
+    assert "TXXX:UNSYNCEDLYRICS" not in tags
+
+def test_mp3_lyrics_per_frame_control(tmp_path):
+    """Each ID3 lyric frame independently controlled."""
+    from kabooz.config import TaggingConfig
+    path = tmp_path / "track.mp3"
+    make_mp3(path)
+    cfg = TaggingConfig(
+        mp3_uslt="plain",
+        mp3_txxx_unsynced="plain",
+        mp3_sylt="synced",
+    )
+    Tagger().tag(path, make_track(), album=None,
+                 lyrics=_lyrics_fixture(), embed_cover=False,
+                 tagging_config=cfg)
+    tags = ID3(path)
+    uslt = tags.getall("USLT")
+    assert uslt and uslt[0].text == "One more time"
+    assert "TXXX:UNSYNCEDLYRICS" in tags
+    assert tags["TXXX:UNSYNCEDLYRICS"].text[0] == "One more time"
+    assert tags.getall("SYLT"), "expected SYLT frame in 'both'/'synced' mode"
+
+def test_mp3_sylt_rejects_plain_mode():
+    """mp3_sylt can only be 'synced' or 'none' — binary frame."""
+    import pytest
+    from kabooz.config import QobuzConfig, validate_config, ConfigError
+    cfg = QobuzConfig()
+    cfg.tagging.mp3_sylt = "plain"
+    with pytest.raises(ConfigError, match="binary synced frame"):
+        validate_config(cfg)

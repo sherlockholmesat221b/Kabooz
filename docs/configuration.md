@@ -78,10 +78,56 @@ embed_cover = true
 # For single-track downloads, the file is named after the audio file.
 save_cover_file = false
 
-# Fetch synced lyrics from LRCLIB and embed them in audio files.
-# Writes LRC timestamps to SYNCEDLYRICS (FLAC) / SYLT (MP3) frames,
-# and plain text to LYRICS (FLAC) / USLT (MP3) frames.
-fetch_lyrics = false
+# ── Lyrics tag mapping ─────────────────────────────────────────────────
+# Each output tag is controlled independently. Values:
+#
+#   "synced" — LRC text with [mm:ss.xx] timestamps; skipped if no
+#              synced lyrics available
+#   "plain"  — plain text with timestamps stripped; skipped if no
+#              plain text available
+#   "best"   — LRC if available, else plain; skipped if neither
+#   "none"   — tag not written
+#
+# FLAC (Vorbis Comments — text-only, no format constraints)
+flac_lyrics          = "best"   # LYRICS tag
+flac_unsynced_lyrics = "none"   # UNSYNCEDLYRICS tag
+flac_synced_lyrics   = "none"   # SYNCEDLYRICS tag
+
+# MP3 (ID3v2.4)
+mp3_uslt             = "best"   # USLT frame (unsynchronized lyrics)
+mp3_txxx_unsynced    = "none"   # TXXX:UNSYNCEDLYRICS frame
+mp3_sylt             = "none"   # SYLT frame — binary synced; accepts
+                                # only "synced" or "none"
+
+# Write <audio_stem>.lrc alongside each audio file when synced
+# lyrics are available. Works for any player that reads external
+# .lrc files, regardless of tag-reading behaviour.
+save_lrc_file = false
+
+# ── Empirical note (Musicolet, tested 2026-11-04) ─────────────────────
+# These behaviours were measured with scripts/test_flac_lyrics.py
+# and scripts/test_mp3_lyrics.py, 14 test files total:
+#
+#   FLAC:
+#     · LYRICS=LRC only                → synced display ✓
+#     · LYRICS=LRC + UNSYNCEDLYRICS≠∅  → static (UNSYNCED overrides
+#                                          LYRICS; synced display
+#                                          breaks)
+#     · LYRICS=LRC + SYNCEDLYRICS=LRC  → synced display ✓
+#     · SYNCEDLYRICS only              → nothing
+#
+#   MP3:
+#     · USLT=LRC only                  → synced display ✓
+#     · SYLT only                      → nothing
+#     · TXXX:UNSYNCEDLYRICS only       → nothing
+#     · TXXX:LYRICS only               → nothing
+#
+#   Implication for Musicolet users:
+#     Keep flac_unsynced_lyrics="none" and flac_synced_lyrics="none"
+#     when flac_lyrics contains LRC. Everything else is per-user.
+#
+#   Other players vary. foobar2000 and MusicBee, for example, read
+#   SYNCEDLYRICS/SYLT; configure those fields as needed.
 
 
 [musicbrainz]

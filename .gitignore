@@ -1,3 +1,7 @@
 *.pyc 
 *.txt
 .devlog*
+
+# Test artifacts — regenerate with scripts/test_*_lyrics.py
+flac-lyrics-test/
+mp3-lyrics-test/

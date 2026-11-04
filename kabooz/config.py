@@ -42,6 +42,20 @@ class TaggingConfig:
     save_cover_file: bool = False
     fetch_lyrics:    bool = False
 
+    # Per-tag lyric mapping. Each field controls one output tag.
+    # Values: "synced" | "plain" | "best" | "none".
+    # See docs/configuration.md for semantics and empirical notes.
+    flac_lyrics:          str = "best"
+    flac_unsynced_lyrics: str = "none"
+    flac_synced_lyrics:   str = "none"
+    mp3_uslt:             str = "best"
+    mp3_txxx_unsynced:    str = "none"
+    mp3_sylt:             str = "none"   # only "synced" or "none"
+
+    # Write <audio_stem>.lrc alongside each audio file when synced
+    # lyrics are available.
+    save_lrc_file:   bool = False
+
 
 @dataclass
 class NamingConfig:
@@ -142,6 +156,28 @@ def validate_config(cfg: QobuzConfig) -> None:
         if not isinstance(getattr(t, attr), bool):
             raise ConfigError(f"tagging.{attr} must be true or false.")
 
+    _LYRIC_MODES = {"synced", "plain", "best", "none"}
+    _SYLT_MODES  = {"synced", "none"}
+
+    for attr in (
+        "flac_lyrics", "flac_unsynced_lyrics", "flac_synced_lyrics",
+        "mp3_uslt", "mp3_txxx_unsynced",
+    ):
+        val = getattr(t, attr)
+        if val not in _LYRIC_MODES:
+            raise ConfigError(
+                f"tagging.{attr}={val!r} is invalid. "
+                f"Valid: {', '.join(sorted(_LYRIC_MODES))}"
+            )
+    if t.mp3_sylt not in _SYLT_MODES:
+        raise ConfigError(
+            f"tagging.mp3_sylt={t.mp3_sylt!r} is invalid. "
+            f"Valid: {', '.join(sorted(_SYLT_MODES))} — SYLT is a "
+            f"binary synced frame and cannot carry plain text."
+        )
+    if not isinstance(t.save_lrc_file, bool):
+        raise ConfigError("tagging.save_lrc_file must be true or false.")
+
     for attr in ("track_history", "auto_sync_favorites"):
         if not isinstance(getattr(ld, attr), bool):
             raise ConfigError(f"local_data.{attr} must be true or false.")
@@ -209,10 +245,17 @@ def load_config(path: Path = _CONFIG_PATH) -> QobuzConfig:
 
         t = raw.get("tagging", {})
         cfg.tagging = TaggingConfig(
-            enabled         = t.get("enabled",         cfg.tagging.enabled),
-            embed_cover     = t.get("embed_cover",     cfg.tagging.embed_cover),
-            save_cover_file = t.get("save_cover_file", cfg.tagging.save_cover_file),
-            fetch_lyrics    = t.get("fetch_lyrics",    cfg.tagging.fetch_lyrics),
+            enabled              = t.get("enabled",              cfg.tagging.enabled),
+            embed_cover          = t.get("embed_cover",          cfg.tagging.embed_cover),
+            save_cover_file      = t.get("save_cover_file",      cfg.tagging.save_cover_file),
+            fetch_lyrics         = t.get("fetch_lyrics",         cfg.tagging.fetch_lyrics),
+            flac_lyrics          = t.get("flac_lyrics",          cfg.tagging.flac_lyrics),
+            flac_unsynced_lyrics = t.get("flac_unsynced_lyrics", cfg.tagging.flac_unsynced_lyrics),
+            flac_synced_lyrics   = t.get("flac_synced_lyrics",   cfg.tagging.flac_synced_lyrics),
+            mp3_uslt             = t.get("mp3_uslt",             cfg.tagging.mp3_uslt),
+            mp3_txxx_unsynced    = t.get("mp3_txxx_unsynced",    cfg.tagging.mp3_txxx_unsynced),
+            mp3_sylt             = t.get("mp3_sylt",             cfg.tagging.mp3_sylt),
+            save_lrc_file        = t.get("save_lrc_file",        cfg.tagging.save_lrc_file),
         )
 
         n = raw.get("naming", {})

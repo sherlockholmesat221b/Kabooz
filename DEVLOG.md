@@ -388,3 +388,14 @@ decisions captured here so the next session has full context.
   · 7 and 2 are session-layer changes with CLI surface.
   · 6 is one more downloader hook.
   · 5 is iterative; applied per-feature rather than as one commit.
+
+#### NOTES
+- **Qobuz album IDs sometimes equal UPCs.** Confirmed on this
+  session's downloads: Mahler 6 / Haitink has `id == upc ==
+  "0002894830800"`; Disintegration Deluxe has `id == upc ==
+  "0060075324566"`. Both are valid — Qobuz uses the UPC as the
+  album ID for releases that never had an internal catalog number
+  assigned. The convention is inconsistent across the catalog.
+  Design decision (feature #1): `QOBUZ_ALBUM_ID` and `UPC` are both
+  written even when values coincide. They mean different things and
+  neither can be derived from the other in the general case.

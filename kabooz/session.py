@@ -718,6 +718,7 @@ class QobuzSession:
                 album=album,
                 lyrics=lyrics_result,
                 embed_cover=_embed_cover,
+                tagging_config=cfg.tagging,
             )
             tagged = True
 
@@ -736,6 +737,21 @@ class QobuzSession:
         # download, and retry the tagging pipeline automatically.
         if not result.dev_stub:
             self._finalise(result)
+
+        # ── Save .lrc sidecar file ────────────────────────────────────────
+        # Written after _finalise so result.path is the final audio path.
+        if (
+            cfg.tagging.save_lrc_file
+            and lyrics_result
+            and lyrics_result.found
+            and lyrics_result.synced
+            and not result.dev_stub
+        ):
+            try:
+                lrc_path = result.path.with_suffix(".lrc")
+                lrc_path.write_text(lyrics_result.synced, encoding="utf-8")
+            except OSError:
+                pass
 
         # ── Save standalone cover file ────────────────────────────────────
         # Must happen after _finalise so result.path is the final path.
