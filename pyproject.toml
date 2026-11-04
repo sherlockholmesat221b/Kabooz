@@ -56,7 +56,10 @@ packages = ["kabooz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v"
+addopts = "-v -m 'not integration'"
+markers = [
+    "integration: requires live network or external tools (opt-in via -m integration)",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
