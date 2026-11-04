@@ -437,3 +437,110 @@ Remaining below.
   · #7 and #2 both add CLI commands and touch the download path.
   · #6 is a single downloader hook.
   · #5 remaining is iterative.
+
+### 2026-11-04 (addendum — feature #7 complete)
+
+**Author**: [sherlockholmesat221b]
+**Commits Made**: 03b7053..bfedada
+
+#### DONE
+
+- [x] **Feature #7 — ranged album/playlist/artist download.**
+      Three new flags on album, playlist, and artist commands:
+      - --start N / --end M — 1-based inclusive indices
+      - --disc N — filter to a single disc (album only)
+      - --no-warnings — suppress harmless range warnings
+
+      Semantics:
+      - Album without --disc: global track indices across the album
+      - Album with --disc N: per-disc indices within disc N
+      - Playlist: 1-based over playlist positions; {index} template
+        preserves original positions in partial downloads
+      - Artist: 1-based over the release list, NOT tracks
+
+      Implementation:
+      - _slice_range(items, *, start, end, disc, warnings_out) helper
+        in session/downloads.py — pure function, tested in isolation
+        in tests/test_session_downloads.py (19 cases)
+      - Wired into download_album, download_playlist,
+        download_artist_discography; on_warning callback threaded
+        through from CLI to session
+      - CLI validates via session-layer ValueError; displays
+        "Invalid range: <detail>" before any API call
+
+      Error rules (boring and predictable):
+      - Empty result: ValueError with specific message
+      - start > available count: error
+      - end < start: error
+      - end > available count: clamped silently, warns
+      - disc 1 on monodisc album: valid, warns (no-op)
+      - disc 2+ on monodisc album: error
+
+      Warnings printed to stderr with "warning:" prefix, never stdout
+      — piping output is safe. --no-warnings suppresses.
+
+#### NOTES
+
+- **Verification on real album** (Disintegration Deluxe, 3 discs,
+  44 tracks):
+      kabooz album 0060075324566 --disc 5
+        → Invalid range: Cannot download album: disc 5 not found
+      kabooz album 0060075324566 --end 999
+        → warning: end=999 exceeded available count (44); using 44
+      kabooz album 0060075324566 --end 999 --no-warnings
+        → no warning printed
+      kabooz --dev album 0060075324566 --disc 2 --start 1 --end 3
+        → exactly 3 tracks from disc 2
+
+- **Redundant prefix in error message.** The CLI prints
+  "Invalid range: {exc}" where exc already includes
+  "Cannot download album: disc N not found". Result is doubled
+  context. Cosmetic — noted as a future cleanup: either strip the
+  session-layer prefix or make the CLI print raw ValueError text.
+  Not blocking.
+
+- **Favorites / purchases ranged download deferred.** Two branches
+  each (tracks vs albums) with different range-unit semantics.
+  Doing it half-right would be worse than not doing it. The
+  _slice_range helper is now in place; wiring favorites/purchases
+  in later is small. Revisit if requested.
+
+- **Artist range is over releases, not tracks.** Intentionally
+  different from album's track range. Documented in --help and
+  docs/cli.md.
+
+- **Session split and CLI split complete.** This session also
+  refactored session.py (1,500 lines → 10 mixin modules) and
+  cli.py (1,000 lines → 12 modules). Feature #7 was the first
+  work landed against the split codebase — the file-level
+  isolation paid off, edits stayed small.
+
+#### BUGS
+
+No new bugs from feature #7.
+
+Pre-existing, unchanged from the previous DEVLOG entry:
+- max_workers / -j is a no-op for all CLI download commands
+- lookup_isrc logs 404 as error
+- Network TLS block for musicbrainz.org on mobile data (not Kabooz)
+
+#### TODO
+
+- [ ] Cosmetic: redundant "Invalid range: Cannot download X:" prefix
+      in feature #7 error messages. Strip session-layer context from
+      the ValueError message, OR have CLI print raw exc.
+- [ ] Favorites / purchases ranged download. Deferred from feature #7.
+- [ ] max_workers no-op fix. Larger change, needs threading review.
+- [ ] Refactor: split client.py if editing becomes painful — not
+      currently needed (untouched since v0.1.0).
+- [ ] Man page for kabooz (after splits — both done, so this can
+      proceed whenever).
+
+#### FEATURES
+
+Remaining from the original seven-feature queue:
+- #2 stream URL command — not started
+- #6 FLAC MD5 fix via metaflac --set-md5sum — not started
+- #5 remaining: quality fine-tuning, external_processor hook
+
+Completed: #1, #3, #4, #7, and #5 partial (cover art sizes).
