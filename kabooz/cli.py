@@ -75,6 +75,22 @@ def _quality(s: Optional[str]) -> Optional[Quality]:
         raise typer.Exit(code=1)
 
 
+_VALID_COVER_SIZES = {"thumbnail", "small", "large", "original"}
+
+
+def _cover_size(s: Optional[str]) -> Optional[str]:
+    """Validate a --cover-size / --save-cover-size argument."""
+    if s is None:
+        return None
+    if s not in _VALID_COVER_SIZES:
+        err_console.print(
+            f"[red]Invalid cover size:[/red] {s!r}. "
+            f"Valid: {', '.join(sorted(_VALID_COVER_SIZES))}"
+        )
+        raise typer.Exit(code=1)
+    return s
+
+
 def _resolve_id(url_or_id: str, expected_type: Optional[str] = None) -> str:
     """Parse a Qobuz URL or bare ID and return the entity ID string."""
     if url_or_id.startswith("http"):
@@ -469,6 +485,10 @@ def track(
     save_cover: Optional[bool] = typer.Option(None,  "--save-cover/--no-save-cover"),
     workers:    Optional[int]  = typer.Option(None,  "-j"),
     template:   Optional[str]  = typer.Option(None,  "--template"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """Download a single track."""
     cfg  = _cfg()
@@ -492,6 +512,8 @@ def track(
                 save_cover_file=save_cover,
                 on_progress=on_progress,
                 workers=workers,
+                cover_size=_cover_size(cover_size),
+                sidecar_size=_cover_size(save_cover_size),
             )
         except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
             _handle_auth_error(exc)
@@ -523,6 +545,10 @@ def album(
     goodies:    Optional[bool] = typer.Option(None,  "--goodies/--no-goodies"),
     workers:    Optional[int]  = typer.Option(None,  "-j"),
     template:   Optional[str]  = typer.Option(None,  "--template"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """Download a full album."""
     cfg  = _cfg()
@@ -570,6 +596,8 @@ def album(
                 on_track_fail=on_track_fail,
                 on_progress=on_progress,
                 workers=workers,
+                cover_size=_cover_size(cover_size),
+                sidecar_size=_cover_size(save_cover_size),
             )
         except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
             _handle_auth_error(exc)
@@ -923,6 +951,10 @@ def playlist(
     workers:    Optional[int]  = typer.Option(None, "-j"),
     template:   Optional[str]  = typer.Option(None, "--template"),
     m3u:        bool           = typer.Option(False, "--m3u"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """Download a full playlist (all pages, pagination-proof)."""
     cfg  = _cfg()
@@ -940,6 +972,8 @@ def playlist(
             on_track_start=_on_track_start,
             on_track_done=_on_track_done,
             workers=workers,
+            cover_size=_cover_size(cover_size),
+            sidecar_size=_cover_size(save_cover_size),
             write_m3u=m3u,
         )
     except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
@@ -967,6 +1001,10 @@ def artist(
     ),
     workers:      Optional[int]  = typer.Option(None,  "-j", "--workers"),
     template:     Optional[str]  = typer.Option(None,  "--template"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """
     Download an artist's full discography.
@@ -1015,6 +1053,8 @@ def artist(
             on_track_start=_on_track_start,
             on_track_done=on_done,
             workers=workers,
+            cover_size=_cover_size(cover_size),
+            sidecar_size=_cover_size(save_cover_size),
         )
         grand_fail = sum(len(r.failed) for r in results)
     except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
@@ -1040,6 +1080,10 @@ def favorites(
     output:   Optional[Path] = typer.Option(None, "-o", "--output"),
     quality:  Optional[str]  = typer.Option(None, "-q", "--quality"),
     workers:  Optional[int]  = typer.Option(None, "-j", "--workers"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """
     Download all favorited tracks or albums.
@@ -1065,6 +1109,8 @@ def favorites(
             on_track_start=_on_track_start,
             on_track_done=_on_track_done,
             workers=workers,
+            cover_size=_cover_size(cover_size),
+            sidecar_size=_cover_size(save_cover_size),
         )
     except PoolModeError as exc:
         err_console.print(f"[red]{exc}[/red]")
@@ -1089,6 +1135,10 @@ def purchases(
     output:        Optional[Path] = typer.Option(None, "-o", "--output"),
     quality:       Optional[str]  = typer.Option(None, "-q", "--quality"),
     workers:       Optional[int]  = typer.Option(None, "-j", "--workers"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """Download all purchased albums or tracks."""
     if purchase_type not in ("albums", "tracks"):
@@ -1107,6 +1157,8 @@ def purchases(
             on_track_start=_on_track_start,
             on_track_done=_on_track_done,
             workers=workers,
+            cover_size=_cover_size(cover_size),
+            sidecar_size=_cover_size(save_cover_size),
         )
     except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
         _handle_auth_error(exc)
@@ -1570,6 +1622,10 @@ def lpl_download(
     quality:  Optional[str]  = typer.Option(None, "-q"),
     workers:  Optional[int]  = typer.Option(None, "-j"),
     template: Optional[str]  = typer.Option(None, "--template"),
+    cover_size: Optional[str] = typer.Option(None, "--cover-size",
+        help="Embedded cover size: thumbnail | small | large | original"),
+    save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
+        help="Sidecar cover size: thumbnail | small | large | original"),
 ) -> None:
     """Download all tracks in a local playlist."""
     cfg  = _cfg()
@@ -1584,6 +1640,8 @@ def lpl_download(
             on_track_start=_on_track_start,
             on_track_done=_on_track_done,
             workers=workers,
+            cover_size=_cover_size(cover_size),
+            sidecar_size=_cover_size(save_cover_size),
         )
     except ValueError as exc:
         err_console.print(f"[red]{exc}[/red]"); raise typer.Exit(code=1)

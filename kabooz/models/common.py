@@ -107,6 +107,24 @@ class Image:
         base = url.rsplit("_", 1)[0]
         return f"{base}_org.jpg"
 
+    def url_for_size(self, size: str) -> Optional[str]:
+        """
+        Return the URL at the given size tier.
+
+        Tiers: "thumbnail" | "small" | "large" | "original"
+
+        Falls back to large, then small, when the specific tier is
+        absent from the API response. Returns None only if no size
+        URL exists at all.
+        """
+        tiers = {
+            "thumbnail": self.thumbnail,
+            "small":     self.small,
+            "large":     self.large,
+            "original":  self.original,
+        }
+        return tiers.get(size) or self.large or self.small
+
     @classmethod
     def from_dict(cls, data: dict) -> Image:
         return cls(

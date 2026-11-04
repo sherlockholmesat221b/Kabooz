@@ -553,3 +553,60 @@ def test_mp3_sylt_rejects_plain_mode():
     cfg.tagging.mp3_sylt = "plain"
     with pytest.raises(ConfigError, match="binary synced frame"):
         validate_config(cfg)
+
+
+def test_flac_embeds_cover_at_configured_size(tmp_path):
+    """embed_cover_size='small' must fetch _230.jpg, not _600.jpg."""
+    from kabooz.config import TaggingConfig
+    path = tmp_path / "track.flac"
+    make_flac(path)
+
+    fake_cover = b"\xff\xd8\xff" + b"\x00" * 100
+    captured = {}
+
+    def fake_fetch(url):
+        captured["url"] = url
+        return fake_cover
+
+    album = make_album(image={
+        "large":     "https://static.qobuz.com/images/covers/ab/cd/abcd_600.jpg",
+        "small":     "https://static.qobuz.com/images/covers/ab/cd/abcd_230.jpg",
+        "thumbnail": "https://static.qobuz.com/images/covers/ab/cd/abcd_50.jpg",
+        "back":      None,
+    })
+
+    cfg = TaggingConfig(embed_cover_size="small")
+    tagger = Tagger()
+    with patch.object(tagger, "_fetch_cover", side_effect=fake_fetch):
+        tagger.tag(
+            path, make_track(), album,
+            embed_cover=True, tagging_config=cfg,
+        )
+
+    assert "_230." in captured["url"]
+    assert "_600." not in captured["url"]
+
+
+def test_image_url_for_size_fallbacks():
+    """url_for_size falls back to large/small when a specific tier is
+    absent, returns None only if no image URL exists at all.
+
+    Uses realistic Qobuz CDN URLs because Image.original derives the
+    unresized version by stripping the _NNN.jpg suffix — bare URLs
+    without that suffix are not supported by the property."""
+    from kabooz.models.common import Image
+
+    img = Image(
+        large="https://x.com/covers/ab/cd/abcd_600.jpg",
+        small="https://x.com/covers/ab/cd/abcd_230.jpg",
+        thumbnail=None,
+    )
+    assert img.url_for_size("large") == "https://x.com/covers/ab/cd/abcd_600.jpg"
+    assert img.url_for_size("small") == "https://x.com/covers/ab/cd/abcd_230.jpg"
+    # thumbnail missing → falls back to large
+    assert img.url_for_size("thumbnail") == "https://x.com/covers/ab/cd/abcd_600.jpg"
+    # original derived by stripping the _600 suffix
+    assert img.url_for_size("original") == "https://x.com/covers/ab/cd/abcd_org.jpg"
+
+    empty = Image()
+    assert empty.url_for_size("large") is None

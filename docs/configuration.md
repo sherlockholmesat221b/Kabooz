@@ -129,6 +129,18 @@ save_lrc_file = false
 #   Other players vary. foobar2000 and MusicBee, for example, read
 #   SYNCEDLYRICS/SYLT; configure those fields as needed.
 
+# Size tier to embed into the audio file's cover art frame.
+#   "thumbnail" — 50px, ~10 KB
+#   "small"     — 230px, ~50 KB
+#   "large"     — 600px, ~150 KB   ← default
+#   "original"  — _org.jpg, up to 3+ MB
+# Override per-download with --cover-size.
+embed_cover_size = "large"
+
+# Size tier to save as the sidecar file (cover.jpg or <track_stem>.jpg).
+# Same values as embed_cover_size.
+# Override per-download with --save-cover-size.
+sidecar_cover_size = "original"
 
 [musicbrainz]
 # Enrich tags with MusicBrainz data (recording IDs, release group IDs,

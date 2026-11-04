@@ -160,10 +160,10 @@ class Tagger:
             url: Optional[str] = None
             if album and album.image:
                 img = album.image
-                url = img.large or img.small
+                url = img.url_for_size(tagging_config.embed_cover_size)
             elif track.album and track.album.image:
                 img = track.album.image
-                url = img.large or img.small
+                url = img.url_for_size(tagging_config.embed_cover_size)
             dev_log(f"fetching cover art from {url}")
             cover_data = self._fetch_cover(url)
             if cover_data:

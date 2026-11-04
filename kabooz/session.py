@@ -674,10 +674,21 @@ class QobuzSession:
         embed_cover:       Optional[bool] = None,
         fetch_lyrics_flag: Optional[bool] = None,
         save_cover_file:   Optional[bool] = None,
+        cover_size:        Optional[str]  = None,
+        sidecar_size:      Optional[str]  = None,
     ) -> TrackDownloadResult:
         cfg = self.config
         t   = cfg.tagging
         mb  = cfg.musicbrainz
+
+        # Build effective tagging config with per-download size overrides.
+        # No-op when both are None — falls through to cfg.tagging.
+        if cover_size or sidecar_size:
+            t = dataclasses.replace(
+                t,
+                embed_cover_size=cover_size or t.embed_cover_size,
+                sidecar_cover_size=sidecar_size or t.sidecar_cover_size,
+            )
 
         _embed_cover  = embed_cover       if embed_cover       is not None else t.embed_cover
         _fetch_lyrics = fetch_lyrics_flag if fetch_lyrics_flag is not None else t.fetch_lyrics
@@ -718,7 +729,7 @@ class QobuzSession:
                 album=album,
                 lyrics=lyrics_result,
                 embed_cover=_embed_cover,
-                tagging_config=cfg.tagging,
+                tagging_config=t,
             )
             tagged = True
 
@@ -757,13 +768,17 @@ class QobuzSession:
         # Must happen after _finalise so result.path is the final path.
         if _save_cover and not result.dev_stub:
             if album:
-                self._save_cover_file(result.path.parent, album)
+                self._save_cover_file(
+                    result.path.parent, album,
+                    size=t.sidecar_cover_size,
+                )
             else:
                 self._save_cover_file(
                     result.path.parent,
                     album=None,
                     track=track,
                     track_stem=result.path.stem,
+                    size=t.sidecar_cover_size,
                 )
 
         if cfg.local_data.track_history and not result.dev_stub:
@@ -803,15 +818,17 @@ class QobuzSession:
     def download_track(
         self,
         url_or_id:         str,
-        quality:           Optional[Quality] = None,
-        dest_dir:          Optional[Path]    = None,
-        template:          Optional[str]     = None,
-        embed_cover:       Optional[bool]    = None,
-        fetch_lyrics_flag: Optional[bool]    = None,
-        save_cover_file:   Optional[bool]    = None,
+        quality:           Optional[Quality]          = None,
+        dest_dir:          Optional[Path]             = None,
+        template:          Optional[str]              = None,
+        embed_cover:       Optional[bool]             = None,
+        fetch_lyrics_flag: Optional[bool]             = None,
+        save_cover_file:   Optional[bool]             = None,
+        cover_size:        Optional[str]              = None,
+        sidecar_size:      Optional[str]              = None,
         on_progress:       Optional[ProgressCallback] = None,
-        workers:           Optional[int]     = None,
-        external_downloader: Optional[str]   = None,
+        workers:           Optional[int]              = None,
+        external_downloader: Optional[str]            = None,
     ) -> TrackDownloadResult:
         cfg = self.config
         _, track_id = self.resolve_id(url_or_id, "track")
@@ -843,24 +860,28 @@ class QobuzSession:
             embed_cover=embed_cover,
             fetch_lyrics_flag=fetch_lyrics_flag,
             save_cover_file=save_cover_file,
+            cover_size=cover_size,
+            sidecar_size=sidecar_size,
         )
 
     def download_album(
         self,
         url_or_id:         str,
-        quality:           Optional[Quality] = None,
-        dest_dir:          Optional[Path]    = None,
-        template:          Optional[str]     = None,
-        embed_cover:       Optional[bool]    = None,
-        fetch_lyrics_flag: Optional[bool]    = None,
-        save_cover_file:   Optional[bool]    = None,
-        download_goodies:  bool              = True,
+        quality:           Optional[Quality]            = None,
+        dest_dir:          Optional[Path]               = None,
+        template:          Optional[str]                = None,
+        embed_cover:       Optional[bool]               = None,
+        fetch_lyrics_flag: Optional[bool]               = None,
+        save_cover_file:   Optional[bool]               = None,
+        cover_size:        Optional[str]                = None,
+        sidecar_size:      Optional[str]                = None,
+        download_goodies:  bool                         = True,
         on_track_start:    Optional[TrackStartCallback] = None,
         on_track_done:     Optional[TrackDoneCallback]  = None,
         on_track_fail:     Optional[TrackFailCallback]  = None,
         on_progress:       Optional[ProgressCallback]   = None,
-        workers:           Optional[int]     = None,
-        external_downloader: Optional[str]   = None,
+        workers:           Optional[int]                = None,
+        external_downloader: Optional[str]              = None,
     ) -> AlbumDownloadResult:
         from .dev import dev_log
 
@@ -941,13 +962,15 @@ class QobuzSession:
                         on_track_fail(track_obj.display_title, _reason)
                     continue
 
-                track_results.append(dl_result)
                 tdr = self._post_download(
                     dl_result, track_obj, album_obj,
                     embed_cover=embed_cover,
                     fetch_lyrics_flag=fetch_lyrics_flag,
                     save_cover_file=save_cover_file,
-)
+                    cover_size=cover_size,
+                    sidecar_size=sidecar_size,
+                )
+
                 agg.tracks.append(tdr)
                 if cfg.musicbrainz.enabled and track_obj.isrc and not dl_result.dev_stub:
                     agg.mb_attempted += 1
@@ -1092,6 +1115,8 @@ class QobuzSession:
         on_track_done:  Optional[TrackDoneCallback]  = None,
         on_track_fail:  Optional[TrackFailCallback]  = None,
         workers:        Optional[int]    = None,
+        cover_size:     Optional[str]    = None,
+        sidecar_size:   Optional[str]    = None,
     ) -> list[AlbumDownloadResult]:
         """
         Download every release in an artist's discography.
@@ -1172,6 +1197,8 @@ class QobuzSession:
                     quality=quality,
                     dest_dir=artist_dir,
                     template=effective_template,
+                    cover_size=cover_size,
+                    sidecar_size=sidecar_size,
                     on_track_start=on_track_start,
                     on_track_done=on_track_done,
                     on_track_fail=on_track_fail,
@@ -1199,6 +1226,8 @@ class QobuzSession:
         embed_cover:       Optional[bool]    = None,
         fetch_lyrics_flag: Optional[bool]    = None,
         save_cover_file:   Optional[bool]    = None,
+        cover_size:        Optional[str]     = None,
+        sidecar_size:      Optional[str]     = None,
         on_track_start:    Optional[TrackStartCallback] = None,
         on_track_done:     Optional[TrackDoneCallback]  = None,
         on_track_fail:     Optional[TrackFailCallback]  = None,
@@ -1269,6 +1298,8 @@ class QobuzSession:
                     embed_cover=embed_cover,
                     fetch_lyrics_flag=fetch_lyrics_flag,
                     save_cover_file=save_cover_file,
+                    cover_size=cover_size,
+                    sidecar_size=sidecar_size,
                 )
                 agg.tracks.append(tdr)
                 m3u.append(str(dl_result.path))
@@ -1292,6 +1323,8 @@ class QobuzSession:
         on_track_start: Optional[TrackStartCallback] = None,
         on_track_done:  Optional[TrackDoneCallback]  = None,
         workers:        Optional[int]     = None,
+        cover_size:     Optional[str]     = None,
+        sidecar_size:   Optional[str]     = None,
     ) -> PlaylistDownloadResult:
         cfg = self.config
         pl  = self.store.get_playlist_by_name(playlist_name_or_id)
@@ -1333,7 +1366,11 @@ class QobuzSession:
                     )
                 except Exception:
                     agg.failed += 1; continue
-                tdr = self._post_download(dl_result, track_obj)
+                tdr = self._post_download(
+                    dl_result, track_obj,
+                    cover_size=cover_size,
+                    sidecar_size=sidecar_size,
+                )
                 agg.tracks.append(tdr)
                 if on_track_done:
                     on_track_done(tdr)
@@ -1341,12 +1378,15 @@ class QobuzSession:
 
     def download_favorites(
         self,
-        fav_type:       str              = "tracks",
-        quality:        Optional[Quality] = None,
-        dest_dir:       Optional[Path]   = None,
-        on_track_start: Optional[TrackStartCallback] = None,
-        on_track_done:  Optional[TrackDoneCallback]  = None,
-        workers:        Optional[int]    = None,
+        fav_type:          str                           = "tracks",
+        quality:           Optional[Quality]             = None,
+        dest_dir:          Optional[Path]                = None,
+        save_cover_file:   Optional[bool]                = None,
+        cover_size:        Optional[str]                 = None,
+        sidecar_size:      Optional[str]                 = None,
+        on_track_start:    Optional[TrackStartCallback]  = None,
+        on_track_done:     Optional[TrackDoneCallback]   = None,
+        workers:           Optional[int]                 = None,
     ) -> PlaylistDownloadResult:
         cfg  = self.config
         q    = quality or _parse_quality(cfg.download.quality)
@@ -1358,8 +1398,11 @@ class QobuzSession:
                 try:
                     r = self.download_album(
                         str(album_obj.id), quality=q, dest_dir=dest,
-                        on_track_start=on_track_start, on_track_done=on_track_done,
+                        on_track_start=on_track_start,
+                        on_track_done=on_track_done,
                         workers=workers,
+                        cover_size=cover_size,
+                        sidecar_size=sidecar_size,
                     )
                     agg.tracks.extend(r.tracks)
                     agg.failed += r.failed
@@ -1387,10 +1430,12 @@ class QobuzSession:
                     )
                 except Exception as exc:
                     agg.failed.append(f"{getattr(track_obj, 'display_title', '?')} — {exc}"); continue
-                tdr = self._post_download(dl_result, track_obj)
-                agg.tracks.append(tdr)
-                if on_track_done:
-                    on_track_done(tdr)
+
+                tdr = self._post_download(
+                    dl_result, track_obj,
+                    cover_size=cover_size,
+                    sidecar_size=sidecar_size,
+                )
         return agg
 
     def download_purchases(
@@ -1401,6 +1446,8 @@ class QobuzSession:
         on_track_start: Optional[TrackStartCallback] = None,
         on_track_done:  Optional[TrackDoneCallback]  = None,
         workers:        Optional[int]    = None,
+        cover_size:     Optional[str]    = None,
+        sidecar_size:   Optional[str]    = None,
     ) -> PlaylistDownloadResult:
         cfg  = self.config
         q    = quality or _parse_quality(cfg.download.quality)
@@ -1414,6 +1461,8 @@ class QobuzSession:
                         str(album_obj.id), quality=q, dest_dir=dest,
                         on_track_start=on_track_start, on_track_done=on_track_done,
                         workers=workers,
+                        cover_size=cover_size,
+                        sidecar_size=sidecar_size,
                     )
                     agg.tracks.extend(r.tracks)
                     agg.failed += r.failed
@@ -1443,7 +1492,11 @@ class QobuzSession:
                     )
                 except Exception as exc:
                     agg.failed.append(f"{getattr(track_obj, 'display_title', '?')} — {exc}"); continue
-                tdr = self._post_download(dl_result, track_obj)
+                tdr = self._post_download(
+                    dl_result, track_obj,
+                    cover_size=cover_size,
+                    sidecar_size=sidecar_size,
+                )
                 agg.tracks.append(tdr)
                 if on_track_done:
                     on_track_done(tdr)
@@ -1711,6 +1764,7 @@ class QobuzSession:
         album: Optional[Album] = None,
         track: Optional[Track] = None,
         track_stem: Optional[str] = None,
+        size: str = "original",
     ) -> None:
         """
         Save cover art as a JPEG file alongside the audio.
@@ -1733,15 +1787,11 @@ class QobuzSession:
         url: Optional[str] = None
 
         if album and album.image:
-            url = (
-                album.image.original
-                or album.image.large
-                or album.image.small
-            )
+            url = album.image.url_for_size(size)
         elif track and track.album and track.album.image:
             img = track.album.image
-            if hasattr(img, "original"):
-                url = img.original or img.large or img.small
+            if hasattr(img, "url_for_size"):
+                url = img.url_for_size(size)
             elif isinstance(img, dict):
                 url = img.get("large") or img.get("small")
 

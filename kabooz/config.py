@@ -56,6 +56,13 @@ class TaggingConfig:
     # lyrics are available.
     save_lrc_file:   bool = False
 
+    # Cover art size tiers. Values match Qobuz's CDN:
+    #   "thumbnail" — 50px
+    #   "small"     — 230px
+    #   "large"     — 600px
+    #   "original"  — _org.jpg (unresized)
+    embed_cover_size:   str = "large"
+    sidecar_cover_size: str = "original"
 
 @dataclass
 class NamingConfig:
@@ -178,6 +185,15 @@ def validate_config(cfg: QobuzConfig) -> None:
     if not isinstance(t.save_lrc_file, bool):
         raise ConfigError("tagging.save_lrc_file must be true or false.")
 
+    _COVER_SIZES = {"thumbnail", "small", "large", "original"}
+    for attr in ("embed_cover_size", "sidecar_cover_size"):
+        val = getattr(t, attr)
+        if val not in _COVER_SIZES:
+            raise ConfigError(
+                f"tagging.{attr}={val!r} is invalid. "
+                f"Valid: {', '.join(sorted(_COVER_SIZES))}"
+            )
+
     for attr in ("track_history", "auto_sync_favorites"):
         if not isinstance(getattr(ld, attr), bool):
             raise ConfigError(f"local_data.{attr} must be true or false.")
@@ -256,6 +272,8 @@ def load_config(path: Path = _CONFIG_PATH) -> QobuzConfig:
             mp3_txxx_unsynced    = t.get("mp3_txxx_unsynced",    cfg.tagging.mp3_txxx_unsynced),
             mp3_sylt             = t.get("mp3_sylt",             cfg.tagging.mp3_sylt),
             save_lrc_file        = t.get("save_lrc_file",        cfg.tagging.save_lrc_file),
+            embed_cover_size     = t.get("embed_cover_size",     cfg.tagging.embed_cover_size),
+            sidecar_cover_size   = t.get("sidecar_cover_size",   cfg.tagging.sidecar_cover_size),
         )
 
         n = raw.get("naming", {})
