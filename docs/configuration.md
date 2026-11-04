@@ -227,33 +227,3 @@ kabooz album 0093046758769 --template "{albumartist}/{album}/{track:02d}. {title
 kabooz album 0093046758769 -j 4
 ```
 
-
-
-### FLAC MD5 fix
-
-Qobuz serves FLAC files with a zeroed MD5 checksum in the STREAMINFO
-block. Some players and archival tools use this checksum to verify
-the local copy is intact at rest. This feature recomputes it.
-
-    [download]
-    # Recompute FLAC STREAMINFO MD5 after tagging using
-    # metaflac --set-md5sum. Requires flac >= 1.4.0. Adds ~1-2s per
-    # hi-res track (decodes audio to compute the hash, no re-encode).
-    # Default off: keeps downloads lean, avoids external dependency.
-    fix_flac_md5 = false
-
-**Caveat:** the recomputed MD5 verifies the LOCAL copy is intact at
-rest. It does NOT prove the file matches Qobuz's source — the source
-was likely transcoded before delivery, which is exactly why the
-original MD5 was zeroed.
-
-If metaflac is missing or older than 1.4.0, the fix is skipped with a
-one-line warning (in --dev mode; silent otherwise). Install a recent
-flac package:
-
-    # Termux
-    pkg install flac
-    # Debian/Ubuntu
-    apt install flac
-    # macOS
-    brew install flac
