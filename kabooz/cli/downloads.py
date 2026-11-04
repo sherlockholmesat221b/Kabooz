@@ -19,7 +19,7 @@ import typer
 
 from ._app import app, lpl_app, _session
 from .helpers import (
-    console, err_console,
+    console, err_console, _warn_cb,
     _quality, _cover_size, _resolve_id, _cfg,
     _make_progress, _on_track_start, _on_track_done,
     _on_album_start, _print_failed, _handle_auth_error,
@@ -104,6 +104,14 @@ def album(
         help="Embedded cover size: thumbnail | small | large | original"),
     save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
         help="Sidecar cover size: thumbnail | small | large | original"),
+    start: int = typer.Option(1, "--start",
+        help="1-based track index (global, or per-disc if --disc is set)"),
+    end: Optional[int] = typer.Option(None, "--end",
+        help="1-based track index to end at (inclusive)"),
+    disc: Optional[int] = typer.Option(None, "--disc",
+        help="Filter to this disc; --start/--end become per-disc indices"),
+    no_warnings: bool = typer.Option(False, "--no-warnings",
+        help="Suppress harmless range warnings"),
 ) -> None:
     """Download a full album."""
     cfg  = _cfg()
@@ -145,6 +153,8 @@ def album(
                 embed_cover=cover,
                 fetch_lyrics_flag=lyrics,
                 save_cover_file=save_cover,
+                start=start, end=end, disc=disc,
+                on_warning=_warn_cb(no_warnings),
                 download_goodies=goodies if goodies is not None else True,
                 on_track_start=on_track_start,
                 on_track_done=_on_track_done,
@@ -269,6 +279,12 @@ def playlist(
         help="Embedded cover size: thumbnail | small | large | original"),
     save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
         help="Sidecar cover size: thumbnail | small | large | original"),
+    start: int = typer.Option(1, "--start",
+        help="1-based playlist position ({index} preserves original)"),
+    end: Optional[int] = typer.Option(None, "--end",
+        help="1-based playlist position to end at (inclusive)"),
+    no_warnings: bool = typer.Option(False, "--no-warnings",
+        help="Suppress harmless range warnings"),
 ) -> None:
     """Download a full playlist (all pages, pagination-proof)."""
     cfg  = _cfg()
@@ -283,6 +299,8 @@ def playlist(
             embed_cover=cover,
             fetch_lyrics_flag=lyrics,
             save_cover_file=save_cover,
+            start=start, end=end,
+            on_warning=_warn_cb(no_warnings),
             on_track_start=_on_track_start,
             on_track_done=_on_track_done,
             workers=workers,
@@ -318,6 +336,12 @@ def artist(
         help="Embedded cover size: thumbnail | small | large | original"),
     save_cover_size: Optional[str] = typer.Option(None, "--save-cover-size",
         help="Sidecar cover size: thumbnail | small | large | original"),
+    start: int = typer.Option(1, "--start",
+        help="1-based release index (over releases, NOT tracks)"),
+    end: Optional[int] = typer.Option(None, "--end",
+        help="1-based release index to end at (inclusive)"),
+    no_warnings: bool = typer.Option(False, "--no-warnings",
+        help="Suppress harmless range warnings"),
 ) -> None:
     """
     Download an artist's full discography.
@@ -362,6 +386,8 @@ def artist(
             quality=q,
             dest_dir=output or Path(cfg.download.output_dir),
             template=template,
+            start=start, end=end,
+            on_warning=_warn_cb(no_warnings),
             on_album_start=_on_album_start,
             on_track_start=_on_track_start,
             on_track_done=on_done,

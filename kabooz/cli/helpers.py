@@ -166,6 +166,15 @@ def _credits_callback(value: bool) -> None:
 def _cfg() -> QobuzConfig:
     return load_config()
 
+def _warn_cb(suppress: bool):
+    """Return a callback for session on_warning events, or None."""
+    if suppress:
+        return None
+    def emit(msg: str) -> None:
+        err_console.print(f"[yellow]warning:[/yellow] {msg}")
+    return emit
+
+
 def _handle_auth_error(exc: Exception) -> None:
     err_console.print(
         f"[red]Authentication error:[/red] {exc}\n"
