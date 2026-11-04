@@ -81,9 +81,22 @@ class QobuzSession(
     ) -> None:
         self.client  = client
         self.config  = config
-        self.store   = store or LocalStore(config.local_data.db_path)
+        self._store  = store  # lazily constructed on first access
         self._dev    = dev
         self._reporter = _StreamReporter(client, enabled=True)
+
+    @property
+    def store(self) -> LocalStore:
+        """Lazy LocalStore — constructed on first access so commands
+        that do not touch the local database (kabooz url, kabooz
+        search) skip the SQLite open and schema cost."""
+        if self._store is None:
+            self._store = LocalStore(self.config.local_data.db_path)
+        return self._store
+
+    @store.setter
+    def store(self, value: LocalStore) -> None:
+        self._store = value
 
     # ── Construction ───────────────────────────────────────────────────────
 

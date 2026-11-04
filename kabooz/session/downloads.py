@@ -19,9 +19,6 @@ import httpx
 
 from ..dev import dev_log
 from ..download.downloader import Downloader, DownloadResult, GoodieResult
-from ..download.lyrics import fetch_lyrics
-from ..download.musicbrainz import lookup_isrc, apply_mb_tags
-from ..download.tagger import Tagger
 from ..download.naming import sanitize
 from ..exceptions import (
     APIError, NotFoundError, NotStreamableError, PoolModeError,
@@ -120,6 +117,13 @@ class DownloadsMixin:
         cover_size:        Optional[str]  = None,
         sidecar_size:      Optional[str]  = None,
     ) -> TrackDownloadResult:
+        # Lazy imports: only needed for the tagging pipeline.
+        # Deferred so URL-only / metadata commands (kabooz url,
+        # kabooz search) do not pay mutagen's import cost.
+        from ..download.tagger import Tagger
+        from ..download.musicbrainz import lookup_isrc, apply_mb_tags
+        from ..download.lyrics import fetch_lyrics
+
         cfg = self.config
         t   = cfg.tagging
         mb  = cfg.musicbrainz
