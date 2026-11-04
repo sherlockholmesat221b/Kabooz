@@ -359,13 +359,10 @@ class DownloadsMixin:
             else list(self.client.iter_album_tracks(album_id))
         )
         _sw: list[str] = []
-        try:
-            summaries = [s for _, s in _slice_range(
-                summaries, start=start, end=end, disc=disc,
-                warnings_out=_sw,
-            )]
-        except ValueError as exc:
-            raise ValueError(f"Cannot download album: {exc}") from exc
+        summaries = [s for _, s in _slice_range(
+            summaries, start=start, end=end, disc=disc,
+            warnings_out=_sw,
+        )]
         if on_warning:
             for _w in _sw:
                 on_warning(_w)
@@ -623,14 +620,9 @@ class DownloadsMixin:
             ) from exc
 
         _sw: list[str] = []
-        try:
-            releases = [r for _, r in _slice_range(
-                releases, start=start, end=end, warnings_out=_sw,
-            )]
-        except ValueError as exc:
-            raise ValueError(
-                f"Cannot download discography: {exc}"
-            ) from exc
+        releases = [r for _, r in _slice_range(
+            releases, start=start, end=end, warnings_out=_sw,
+        )]
         if on_warning:
             for _w in _sw:
                 on_warning(_w)
