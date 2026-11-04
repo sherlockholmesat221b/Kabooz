@@ -314,6 +314,10 @@ class DownloadsMixin:
         save_cover_file:   Optional[bool]               = None,
         cover_size:        Optional[str]                = None,
         sidecar_size:      Optional[str]                = None,
+        start:             int               = 1,
+        end:               Optional[int]     = None,
+        disc:              Optional[int]     = None,
+        on_warning:        Optional[Callable[[str], None]] = None,
         download_goodies:  bool                         = True,
         on_track_start:    Optional[TrackStartCallback] = None,
         on_track_done:     Optional[TrackDoneCallback]  = None,
@@ -354,6 +358,17 @@ class DownloadsMixin:
             and len(album_obj.tracks.items) >= (album_obj.tracks.total or 0)
             else list(self.client.iter_album_tracks(album_id))
         )
+        _sw: list[str] = []
+        try:
+            summaries = [s for _, s in _slice_range(
+                summaries, start=start, end=end, disc=disc,
+                warnings_out=_sw,
+            )]
+        except ValueError as exc:
+            raise ValueError(f"Cannot download album: {exc}") from exc
+        if on_warning:
+            for _w in _sw:
+                on_warning(_w)
         total = len(summaries)
 
         with Downloader(
@@ -556,6 +571,9 @@ class DownloadsMixin:
         workers:        Optional[int]    = None,
         cover_size:     Optional[str]    = None,
         sidecar_size:   Optional[str]    = None,
+        start:          int              = 1,
+        end:            Optional[int]    = None,
+        on_warning:     Optional[Callable[[str], None]] = None,
     ) -> list[AlbumDownloadResult]:
         """
         Download every release in an artist's discography.
@@ -603,6 +621,19 @@ class DownloadsMixin:
             raise RuntimeError(
                 f"Failed to list releases for artist {artist_id}: {exc}"
             ) from exc
+
+        _sw: list[str] = []
+        try:
+            releases = [r for _, r in _slice_range(
+                releases, start=start, end=end, warnings_out=_sw,
+            )]
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot download discography: {exc}"
+            ) from exc
+        if on_warning:
+            for _w in _sw:
+                on_warning(_w)
 
         total   = len(releases)
         results = []
@@ -667,6 +698,9 @@ class DownloadsMixin:
         save_cover_file:   Optional[bool]    = None,
         cover_size:        Optional[str]     = None,
         sidecar_size:      Optional[str]     = None,
+        start:             int               = 1,
+        end:               Optional[int]     = None,
+        on_warning:        Optional[Callable[[str], None]] = None,
         on_track_start:    Optional[TrackStartCallback] = None,
         on_track_done:     Optional[TrackDoneCallback]  = None,
         on_track_fail:     Optional[TrackFailCallback]  = None,
@@ -688,6 +722,24 @@ class DownloadsMixin:
         agg   = PlaylistDownloadResult(name=pl.name)
         m3u:  list[str] = ["#EXTM3U"]
 
+        all_summaries = list(
+            self.client.iter_playlist_track_summaries(playlist_id)
+        )
+        _sw: list[str] = []
+        try:
+            sliced = _slice_range(
+                all_summaries, start=start, end=end,
+                warnings_out=_sw,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Cannot download playlist: {exc}"
+            ) from exc
+        if on_warning:
+            for _w in _sw:
+                on_warning(_w)
+        total = len(sliced)
+
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
@@ -697,11 +749,9 @@ class DownloadsMixin:
             naming_template=tmpl,
             dev=self._dev,
         ) as dl:
-            for i, summary in enumerate(
-                self.client.iter_playlist_track_summaries(playlist_id), 1
-            ):
+            for original_pos, summary in sliced:
                 if on_track_start:
-                    on_track_start(summary.title, i, total)
+                    on_track_start(summary.title, original_pos, total)
 
                 try:
                     track_obj = self.client.get_track(str(summary.id))
@@ -723,7 +773,7 @@ class DownloadsMixin:
                     dl_result = dl.download_track(
                         track=track_obj, url_info=url_info,
                         dest_dir=dest, album=None, on_progress=on_progress,
-                        playlist_name=pl.name, playlist_index=i,
+                        playlist_name=pl.name, playlist_index=original_pos,
                     )
                 except Exception as exc:
                     _reason = f"{type(exc).__name__}: {exc}"
