@@ -24,34 +24,34 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Generator, Optional
 
-from .client import QobuzClient
-from .config import QobuzConfig, _CONFIG_PATH, _SESSION_PATH, load_config
-from .download.downloader import Downloader, DownloadResult, GoodieResult
-from .download.lyrics import fetch_lyrics
-from .download.musicbrainz import lookup_isrc, apply_mb_tags
-from .download.naming import sanitize
-from .download.tagger import Tagger
-from .exceptions import (
+from ..client import QobuzClient
+from ..config import QobuzConfig, _CONFIG_PATH, _SESSION_PATH, load_config
+from ..download.downloader import Downloader, DownloadResult, GoodieResult
+from ..download.lyrics import fetch_lyrics
+from ..download.musicbrainz import lookup_isrc, apply_mb_tags
+from ..download.naming import sanitize
+from ..download.tagger import Tagger
+from ..exceptions import (
     APIError, ConfigError, NotFoundError, NotStreamableError,
     PoolModeError, TokenExpiredError, InvalidCredentialsError, NoAuthError,
 )
-from .local.export import (
+from ..local.export import (
     ImportResult, backup_to_tar, export_favorites_toml,
     import_favorites_toml, import_playlist_toml, restore_from_tar,
 )
-from .local.playlist import (
+from ..local.playlist import (
     LocalPlaylist, LocalPlaylistTrack,
     load_playlist, save_playlist, playlist_from_store_tracks,
 )
-from .local.store import LocalStore
-from .models.album import Album
-from .models.artist import Artist
-from .models.favorites import UserFavorites, UserFavoriteIds, LabelDetail
-from .models.playlist import Playlist
-from .models.track import Track
-from .models.user import UserProfile
-from .quality import Quality, QUALITY_DESCENDING
-from .url import parse_url
+from ..local.store import LocalStore
+from ..models.album import Album
+from ..models.artist import Artist
+from ..models.favorites import UserFavorites, UserFavoriteIds, LabelDetail
+from ..models.playlist import Playlist
+from ..models.track import Track
+from ..models.user import UserProfile
+from ..quality import Quality, QUALITY_DESCENDING
+from ..url import parse_url
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -246,7 +246,7 @@ class QobuzSession:
     ) -> "QobuzSession":
         cfg = load_config(config_path)
         if dev:
-            from .dev import enable as _dev_enable
+            from ..dev import enable as _dev_enable
             _dev_enable()
         if cfg.credentials.pool:
             client = QobuzClient.from_token_pool(cfg.credentials.pool, dev=dev)
@@ -883,7 +883,7 @@ class QobuzSession:
         workers:           Optional[int]                = None,
         external_downloader: Optional[str]              = None,
     ) -> AlbumDownloadResult:
-        from .dev import dev_log
+        from ..dev import dev_log
 
         cfg = self.config
         _, album_id = self.resolve_id(url_or_id, "album")
@@ -1016,8 +1016,8 @@ class QobuzSession:
 
         Returns a list of GoodieResult objects. Empty list if no goodies.
         """
-        from .download.downloader import Downloader
-        from .download.naming import quality_tag
+        from ..download.downloader import Downloader
+        from ..download.naming import quality_tag
 
         cfg = self.config
         _, album_id = self.resolve_id(url_or_id, "album")
@@ -1138,7 +1138,7 @@ class QobuzSession:
         on_album_start(album_title, album_index, album_total) is fired
         before each album so the CLI/TUI can print a clear header.
         """
-        from .dev import dev_log
+        from ..dev import dev_log
 
         cfg = self.config
         _, artist_id = self.resolve_id(url_or_id, "artist")
