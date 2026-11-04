@@ -1,10 +1,7 @@
 # kabooz/cli/__init__.py
 from __future__ import annotations
 
-import os
 import sys
-from pathlib import Path
-from typing import Optional
 
 try:
     import typer
@@ -22,18 +19,6 @@ except ImportError:
     )
     sys.exit(1)
 
-from ..config import (
-    QobuzConfig, _CONFIG_PATH, _SESSION_PATH,
-    load_config, save_config, update_config,
-)
-from ..exceptions import (
-    APIError, ConfigError, InvalidCredentialsError,
-    NoAuthError, NotFoundError, NotStreamableError,
-    PoolModeError, TokenExpiredError,
-)
-from ..quality import Quality
-from ..session import QobuzSession, _parse_quality
-from ..url import parse_url
 
 from ._app import (
     app, library_app, lpl_app, export_app,
