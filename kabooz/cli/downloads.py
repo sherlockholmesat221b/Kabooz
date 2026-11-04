@@ -558,3 +558,145 @@ def lpl_download(
         f"{result.succeeded} downloaded, {result.skipped} skipped"
         + (f", [red]{len(result.failed)} failed[/red]" if result.failed else "") + "."
     )
+
+_URL_FIELDS = [
+    "track_id", "url", "format_id", "format", "mime_type",
+    "bit_depth", "sampling_rate", "quality_label",
+    "requested_quality", "reported",
+]
+_META_FIELDS = [
+    "title", "artist", "album", "album_id", "duration",
+    "isrc", "composer", "work", "year", "genre",
+]
+
+
+@app.command("url")
+def stream_url(
+    url_or_id: str = typer.Argument(..., help="Qobuz track URL or bare track ID"),
+    quality: Optional[str] = typer.Option(None, "-q", "--quality",
+        help="Quality: cd, hires, etc. Default: config."),
+    json_output: bool = typer.Option(False, "--json",
+        help="Format output as JSON. Changes format only, not content. "
+             "Use --field to select fields."),
+    field: Optional[str] = typer.Option(None, "--field",
+        help="Comma-separated field names. Default: url."),
+    report: bool = typer.Option(False, "--report",
+        help="Opt in to reporting stream start to Qobuz. Off by default "
+             "so scripted `kabooz url | xargs curl` does not create false "
+             "play events."),
+) -> None:
+    """
+    Resolve a track to its CDN stream URL.
+
+    \b
+    Examples:
+      kabooz url 3503454                          # bare URL, fast
+      kabooz url 3503454 --json                   # same, as JSON
+      kabooz url 3503454 --field bit_depth        # bare value
+      kabooz url 3503454 --field url,title --json # multiple fields, JSON
+      kabooz url 3503454 --report | xargs mpv     # opt in to reporting
+
+    \b
+    Stream reporting:
+      Download commands: never report
+      TUI playback: always report (existing behaviour)
+      kabooz url: silent; use --report to opt in
+    """
+    import json as _json
+
+    sess = _session()
+    try:
+        _, track_id = sess.resolve_id(url_or_id, "track")
+    except ValueError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+
+    q = sess.resolve_quality(quality)
+
+    requested: list[str] = []
+    if field:
+        requested = [f.strip() for f in field.split(",") if f.strip()]
+        unknown = [f for f in requested if f not in _URL_FIELDS + _META_FIELDS]
+        if unknown:
+            err_console.print(f"[red]Unknown field(s):[/red] {', '.join(unknown)}")
+            err_console.print(f"[dim]URL fields:[/dim] {', '.join(_URL_FIELDS)}")
+            err_console.print(f"[dim]Metadata fields (extra call):[/dim] {', '.join(_META_FIELDS)}")
+            raise typer.Exit(code=1)
+    else:
+        requested = ["url"]
+
+    need_meta = any(f in _META_FIELDS for f in requested)
+
+    try:
+        info = sess.resolve_stream(track_id, quality=q, report=report)
+    except NotStreamableError as exc:
+        err_console.print(f"[red]Not streamable:[/red] {exc}")
+        raise typer.Exit(code=1)
+    except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
+        _handle_auth_error(exc)
+    except APIError as exc:
+        err_console.print(f"[red]API error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    def _tier(fmt_id: int) -> str:
+        return {5: "MP3 320kbps", 6: "FLAC 16-bit / 44.1kHz",
+                7: "FLAC 24-bit / 96kHz", 27: "FLAC 24-bit / 192kHz",
+                }.get(fmt_id, f"format_id={fmt_id}")
+
+    base = {
+        "track_id": info.track_id, "url": info.url,
+        "format_id": info.format_id,
+        "format": "MP3" if info.format_id == 5 else "FLAC",
+        "mime_type": info.mime_type, "bit_depth": info.bit_depth,
+        "sampling_rate": info.sampling_rate,
+        "quality_label": _tier(info.format_id),
+        "requested_quality": q.name.lower(), "reported": report,
+    }
+
+    meta = {f: None for f in _META_FIELDS}
+    if need_meta:
+        try:
+            t = sess.get_track(track_id)
+            meta = {
+                "title": t.display_title,
+                "artist": t.performer.name if t.performer else None,
+                "album": t.album.display_title if t.album else None,
+                "album_id": t.album.id if t.album else None,
+                "duration": t.duration,
+                "isrc": t.isrc,
+                "composer": t.composer.name if t.composer else None,
+                "work": t.work,
+                "year": (t.album.release_date_original or "")[:4] if t.album else None,
+                "genre": (t.album.genre.name if t.album and t.album.genre
+                         else (t.album.genres_list[0] if t.album and t.album.genres_list else None)),
+            }
+        except Exception:
+            pass
+
+    all_vals = {**base, **meta}
+    selected = {k: all_vals.get(k) for k in requested}
+
+    if json_output:
+        typer.echo(_json.dumps(selected, indent=2, ensure_ascii=False))
+        return
+
+    if len(requested) == 1:
+        v = selected[requested[0]]
+        if v is None:
+            typer.echo("null")
+        elif isinstance(v, bool):
+            typer.echo("true" if v else "false")
+        elif isinstance(v, (dict, list)):
+            typer.echo(_json.dumps(v, ensure_ascii=False))
+        else:
+            typer.echo(str(v))
+    else:
+        for k in requested:
+            v = selected[k]
+            if v is None:
+                typer.echo("null")
+            elif isinstance(v, bool):
+                typer.echo("true" if v else "false")
+            else:
+                typer.echo(str(v))
+
