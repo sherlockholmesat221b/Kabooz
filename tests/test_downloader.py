@@ -458,3 +458,17 @@ def test_download_gives_up_after_max_retries(tmp_path):
     downloader = Downloader(max_retries=2)
     with pytest.raises(httpx.RemoteProtocolError):
         downloader._download_to_path(FAKE_URL, dest, None)
+
+
+def test_load_config_reads_max_retries(tmp_path):
+    """Regression: feature #3 added max_retries to DownloadConfig but
+    forgot to wire it into load_config, so user overrides in config.toml
+    were silently ignored. This guards against that recurring."""
+    from kabooz.config import load_config
+
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(
+        "[download]\nmax_retries = 5\n"
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.download.max_retries == 5

@@ -254,6 +254,7 @@ def load_config(path: Path = _CONFIG_PATH) -> QobuzConfig:
             output_dir          = d.get("output_dir",          cfg.download.output_dir),
             quality             = d.get("quality",             cfg.download.quality),
             max_workers         = d.get("max_workers",         cfg.download.max_workers),
+            max_retries         = d.get("max_retries",         cfg.download.max_retries),
             external_downloader = d.get("external_downloader", cfg.download.external_downloader),
             read_timeout        = d.get("read_timeout",        cfg.download.read_timeout),
             connect_timeout     = d.get("connect_timeout",     cfg.download.connect_timeout),
