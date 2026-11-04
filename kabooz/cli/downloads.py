@@ -166,6 +166,9 @@ def album(
             )
         except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
             _handle_auth_error(exc)
+        except ValueError as exc:
+            err_console.print(f"[red]Invalid range:[/red] {exc}")
+            raise typer.Exit(code=1)
         except APIError as exc:
             err_console.print(f"[red]API error:[/red] {exc}")
             raise typer.Exit(code=1)
@@ -310,6 +313,9 @@ def playlist(
         )
     except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
         _handle_auth_error(exc)
+    except ValueError as exc:
+        err_console.print(f"[red]Invalid range:[/red] {exc}")
+        raise typer.Exit(code=1)
     except APIError as exc:
         err_console.print(f"[red]API error:[/red] {exc}")
         raise typer.Exit(code=1)
@@ -398,6 +404,9 @@ def artist(
         grand_fail = sum(len(r.failed) for r in results)
     except (TokenExpiredError, InvalidCredentialsError, NoAuthError) as exc:
         _handle_auth_error(exc)
+    except ValueError as exc:
+        err_console.print(f"[red]Invalid range:[/red] {exc}")
+        raise typer.Exit(code=1)
     except Exception as exc:
         err_console.print(f"[red]Failed:[/red] {exc}")
         raise typer.Exit(code=1)
