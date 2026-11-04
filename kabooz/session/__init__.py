@@ -1,19 +1,4 @@
 # kabooz/session.py
-"""
-QobuzSession — the ONLY place where business logic lives.
-
-Architectural rule
-──────────────────
-cli.py  and  tui.py  are presentation layers.
-They call methods on QobuzSession and render the results.
-They NEVER:
-  · import from kabooz.client directly
-  · call sess.client.anything
-  · duplicate quality-parsing, URL-resolution, or reporting logic
-
-Every operation a user can trigger from the CLI or TUI is a method here,
-so it is equally callable from a plain Python script.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -49,9 +34,7 @@ from ..quality import Quality, QUALITY_DESCENDING
 from ..url import parse_url
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # Public re-exports from _types
-# ══════════════════════════════════════════════════════════════════════════
 
 from ._types import (
     _parse_quality,
@@ -76,9 +59,7 @@ from .discovery import DiscoveryMixin
 from .backup import BackupMixin
 
 
-# ══════════════════════════════════════════════════════════════════════════
 # QobuzSession
-# ══════════════════════════════════════════════════════════════════════════
 
 class QobuzSession(
     DownloadsMixin,
@@ -136,9 +117,7 @@ class QobuzSession(
         cfg = config or load_config()
         return cls(client=client, config=cfg)
 
-    # ══════════════════════════════════════════════════════════════════════
     # Helpers — used by CLI, TUI, and scripts; never duplicated elsewhere
-    # ══════════════════════════════════════════════════════════════════════
 
     def resolve_id(
         self,
@@ -182,100 +161,43 @@ class QobuzSession(
         except ValueError as exc:
             raise ConfigError(str(exc)) from exc
 
-    # ══════════════════════════════════════════════════════════════════════
     # Stream reporting — public API for TUI/player
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Catalog reads — thin wrappers so CLI/TUI never import from .client
-    # ══════════════════════════════════════════════════════════════════════
-
-
-
-
-
-
-
 
 
     def get_user_info(self) -> UserProfile:
         return self.client.get_user_info()
 
 
-
-
-
     # ── Discovery ──────────────────────────────────────────────────────────
 
 
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Radio and recommendations
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Post-download pipeline (tagging, lyrics, MusicBrainz, history)
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-    # ══════════════════════════════════════════════════════════════════════
     # Downloads
-    # ══════════════════════════════════════════════════════════════════════
 
 
         
 
 
-
-
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Favourites
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Remote playlist management
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-
-
-
-
-
-
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Account
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Export / backup
-    # ══════════════════════════════════════════════════════════════════════
 
 
-
-
-
-    # ══════════════════════════════════════════════════════════════════════
     # Private helpers
-    # ══════════════════════════════════════════════════════════════════════
 
 
