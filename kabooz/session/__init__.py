@@ -1,4 +1,4 @@
-# kabooz/session.py
+# kabooz/session/__init__.py
 from __future__ import annotations
 
 from pathlib import Path

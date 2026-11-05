@@ -116,7 +116,8 @@ requested quality exceeds your tier.
 - Tracks, albums, playlists, artist discographies, and favorites
 - `.part` file convention — downloads are atomic; a file exists only when
   fully complete including tagging. Interrupted downloads resume automatically.
-- Parallel downloads with configurable worker count (`-j`)
+- Byte-range parallel downloads within a file (`-x N`, aria2c-style)
+- Aggregate download bandwidth cap (`rate_limit_kbps` config)
 - External downloader support (aria2c, wget) via shell template
 
 **Metadata**
