@@ -30,6 +30,9 @@ class DownloadConfig:
     quality:             str   = "hi_res"
     max_workers:         int   = 1
     max_retries:         int   = 2
+    connections_per_track: int = 1
+    chunk_size_mb:         int = 10
+    rate_limit_kbps:       int = 0
     fix_flac_md5:        bool  = False
     external_downloader: str   = ""
     read_timeout:        float = 300.0
@@ -155,6 +158,18 @@ def validate_config(cfg: QobuzConfig) -> None:
         raise ConfigError(f"download.max_workers={d.max_workers} must be >= 1.")
     if not (0 <= d.max_retries <= 10):
         raise ConfigError(f"download.max_retries={d.max_retries} must be between 0 and 10.")
+    if not (1 <= d.connections_per_track <= 16):
+        raise ConfigError(
+            f"download.connections_per_track={d.connections_per_track} must be 1-16."
+        )
+    if not (1 <= d.chunk_size_mb <= 100):
+        raise ConfigError(
+            f"download.chunk_size_mb={d.chunk_size_mb} must be 1-100."
+        )
+    if not (0 <= d.rate_limit_kbps <= 100000):
+        raise ConfigError(
+            f"download.rate_limit_kbps={d.rate_limit_kbps} must be 0-100000."
+        )
     if not isinstance(d.fix_flac_md5, bool):
         raise ConfigError("download.fix_flac_md5 must be true or false.")
     if d.read_timeout <= 0:
@@ -258,6 +273,9 @@ def load_config(path: Path = _CONFIG_PATH) -> QobuzConfig:
             quality             = d.get("quality",             cfg.download.quality),
             max_workers         = d.get("max_workers",         cfg.download.max_workers),
             max_retries         = d.get("max_retries",         cfg.download.max_retries),
+            connections_per_track = d.get("connections_per_track", cfg.download.connections_per_track),
+            chunk_size_mb       = d.get("chunk_size_mb",       cfg.download.chunk_size_mb),
+            rate_limit_kbps     = d.get("rate_limit_kbps",     cfg.download.rate_limit_kbps),
             fix_flac_md5        = d.get("fix_flac_md5",        cfg.download.fix_flac_md5),
             external_downloader = d.get("external_downloader", cfg.download.external_downloader),
             read_timeout        = d.get("read_timeout",        cfg.download.read_timeout),
