@@ -760,3 +760,224 @@ the real API. Those go in tests/integration/ and are run with
 
 - **Deferred:** MP4-DASH lyrics discovery (Tampermonkey capture
       approach; needs a separate session).
+
+### 2026-11-05
+**Author**: [sherlockholmesat221b]
+**Commits Made**: c0a65b5..e569dd0
+
+**Note**: continuation of the 2026-11-04 session. The 11-04 entry
+covers the session.py / cli.py package splits, feature #7 (ranged
+download), and the perf investigation. This entry covers features
+#2 and #6, chunked download, rate limiting, and the multiple
+rounds of regressions and fixes that came with them.
+
+#### DONE
+
+- [x] **Feature #2 — stream URL command.**
+      `kabooz url <id>` outputs the CDN stream URL to stdout.
+      StreamingMixin.resolve_stream(track_id, quality, report=False)
+      in session/streaming.py — silent by default. report=True opts
+      in to Qobuz reportStreamingStart.
+
+      CLI design (final):
+        --json controls FORMAT only, not content
+        --field controls CONTENT (comma-separated list)
+        Bare URL default → 1 API call, no metadata fetch
+        Metadata field requested → 2 API calls (adds get_track)
+
+      `--report` is opt-in so scripted `kabooz url | xargs curl`
+      does not create false play events. Downloads never report;
+      TUI always reports; `kabooz url` is silent unless --report.
+
+- [x] **Feature #6 — FLAC MD5 fix (correct implementation).**
+      download.fix_flac_md5 = false (default off).
+      Decodes via `flac -ds --stdout --force-raw-format
+      --endian=little --sign=signed`, hashes PCM with hashlib.md5,
+      then writes via `metaflac --set-md5sum=<hex>`. Runs after
+      tagging and MB enrichment, before .part→final rename.
+
+      Requires flac >= 1.4.0 and the `flac` binary. If enabled but
+      binary missing → ConfigError immediately (fail-fast). --dev
+      mode skips it. Caveat documented: recomputed MD5 proves the
+      LOCAL copy is intact at rest, not source match.
+
+- [x] **Chunked download (Phase A).**
+      New DownloadConfig fields:
+        connections_per_track = 1   byte-range chunks per track
+        chunk_size_mb = 10          target chunk size
+        rate_limit_kbps = 0         aggregate cap, kbps
+
+      Downloader dispatches to _download_chunked when connections>1
+      and not no_chunks. Splits file into N byte ranges, downloads
+      each via ThreadPoolExecutor to <path>.part.{i}, then
+      _assemble_chunks (pure Python — no `cat`, cross-platform)
+      feeds the assembled .part file to the existing pipeline.
+
+      Resume: complete .part.{i} files detected by size and
+      skipped. Failed chunks persist so next run re-fetches only
+      those. Falls back to single-connection on 400/416 (Range
+      unsupported) or missing Content-Length.
+
+      CLI: -x N / --connections N   (default from config)
+           --no-chunks               (computes connections=1 at CLI
+                                      layer; session signature
+                                      unchanged)
+
+- [x] **Rate limiting.**
+      RateLimiter in kabooz/download/rate_limiter.py — thread-safe
+      aggregate bandwidth cap. Consume called from every chunk
+      write in both _download_chunked and existing _stream_*
+      paths. Tracks cumulative bytes since start, sleeps to
+      enforce target average. 0 = unlimited (default).
+      8000 kbps = 1 MB/s = 8 Mbps.
+
+- [x] **max_retries load_config regression fix.**
+      Feature #3 added max_retries to DownloadConfig and
+      validate_config but never wired it into load_config. Users
+      setting download.max_retries=N were silently ignored
+      (always defaulted to 2). One-line fix + regression test.
+
+- [x] **-j to -x migration.**
+      Old -j/--workers flag removed from all 7 download commands.
+      It was documented as concurrency control but never
+      implemented (silent no-op since v0.1.0). Users passing -j
+      now get "no such option" — honest failure. Breaking change
+      at v0.1.x scope; noted in commit message.
+
+#### NOTES
+
+**Chunked-download design decision.**
+
+Rejected parallel-track model (multiple whole files simultaneously)
+in favour of the conventional aria2c / yt-dlp approach: byte-range
+parallelism WITHIN one file. Parallel tracks would be spotty in
+CLI (N interleaved progress bars), unconventional, and would expose
+lyrics/MB services to rate limits from N concurrent fetches.
+Chunking within one file leaves lyrics/MB calls serialised and
+keeps the progress display to a single bar.
+
+Aggregate-limited networks see ~0% speedup from chunking (all
+chunks share the same pipe). Per-connection-throttled networks see
+2-4x per track. Both are correct; the knob is there for the latter
+case. --dev mode bypasses chunking because dev audio is small
+synthetic content — no benefit, adds assembly overhead.
+
+**Pipeline (Level 2) deferred.**
+
+Producer-consumer: metadata prefetch thread → downloader workers
+→ tagger thread. Overlaps network (downloads) with disk (writes)
+and CPU (tagging, MD5, lyrics parsing). ~5% wall-clock improvement
+on aggregate-limited networks; larger benefit where tagging is a
+meaningful fraction of total time. 3-4 hours, own session.
+
+**Async rewrite not recommended.**
+
+Threading with N chunks scales to 8-16 connections without a
+second code path. Async pays off at 100+ concurrent connections;
+for 4-8 album tracks it is overhead > benefit. Do not build.
+
+**Session / CLI split paid off.**
+
+Feature #2 touched session/streaming.py (one method) and
+cli/downloads.py (one command). Feature #6 touched config.py,
+session/downloads.py. Chunked download touched downloader.py,
+session/downloads.py, cli/downloads.py, config.py, new
+rate_limiter.py, docs. All small focused edits. The 1,500-line
+session.py and 1,000-line cli.py that existed before the split
+would have made each of those a 300+ line multi-site diff. The
+split was worth the day it took.
+
+#### LESSONS
+
+Six-plus rounds of breakage during these features. Full
+post-mortem so future-me does not repeat.
+
+- **Mocked tests must validate ARGUMENTS, not just result.**
+  First FLAC MD5 attempt called `metaflac --set-md5sum <path>` —
+  WRONG, that flag writes an MD5 you supply, it does not compute
+  one. Tests passed because they mocked subprocess.run and only
+  asserted returncode. Real downloads always failed (MD5 came
+  back zeros). Fix: assert on actual argv passed to subprocess
+  matches the tool's real API. The corrected tests do this.
+  Without that assertion, a mock never catches an API misuse.
+
+- **`pipefail` masks `--help` exit codes.**
+  Typer exits 2 for --help (Typer/Click convention).
+  `kabooz track --help | grep -q -- --connections` under
+  `set -o pipefail` returns pipeline exit 2, not grep's 0. Four
+  separate scripts aborted on "missing --connections" while the
+  flag was actually present. Fix: mask exit code explicitly
+  (`output=$(kabooz ... 2>&1 || true)`) or strip pipefail around
+  help checks.
+
+- **`__pycache__` shadows fresh `.py` edits on some filesystems.**
+  Termux ext4/FUSE sometimes has coarse mtime resolution. A
+  freshly-written `.py` can be considered "same age" as an old
+  `.pyc`; Python serves stale bytecode. Symptom is edits
+  confirmed by grep not appearing in --help output. Fix: clear
+  `__pycache__` at the start of every script that touches
+  cli/ or session/. Do it reflexively; it costs 30 ms.
+
+- **Sentinel checks must include `def ` or `class `.**
+  `if "_download_chunked" not in src` returned False because
+  the dispatch code (inserted earlier in the same script) already
+  referenced the name. The method definition was missing. Fix:
+  `"def _download_chunked("` (definition) not `"_download_chunked"`.
+  Grep for the definition, not for the name.
+
+- **Multi-indent regexes match across indents.**
+  `for ind in [16-spaces, 12-spaces, 8-spaces]: re.sub(f'{ind}workers=...')`
+  — the 12-space pattern matches the tail of 16-space lines.
+  Doubled insertions. Fix: single regex with `^(\s+)` anchor,
+  use `m.group(1)` for indent in replacement. One pass, one
+  match per line, any indent.
+
+- **AST-based patching beats regex for method edits.**
+  Session/CLI split used `ast.parse` + method-name lookup +
+  splice by lineno. First-try success every time. Regex failed
+  repeatedly on whitespace/comment/adjacent-reference drift.
+  For structural changes, use AST.
+
+- **Orphan references from partial migrations.**
+  Phase 3 added `connections` to session signatures. Phase 4
+  replaced `workers` in CLI signatures with `connections` +
+  `no_chunks`. But phase 4 also added `no_chunks=no_chunks,` to
+  CLI calls without phase 3 having added `no_chunks` to session
+  signatures. Every download command crashed with TypeError.
+  Fix: two small edits — remove no_chunks from CLI calls,
+  compute `connections=(1 if no_chunks else connections)` at CLI.
+  Lesson: end-to-end design the feature; do not patch in phases
+  where each phase assumes the other landed.
+
+- **Do not commit until the smoke test passes.**
+  Every phase of chunked download should have been followed by
+  `kabooz --dev track <id>` before proceeding. It was not. Each
+  regression would have been caught in seconds. Rule now: no
+  commit until the command runs.
+
+#### BUGS
+
+- **lookup_isrc logs 404 as error.** Cosmetic, unchanged.
+- **Network TLS block for musicbrainz.org on mobile data.** Not
+  a Kabooz bug; VPN resolves.
+- **max_workers no longer a CLI flag.** By design (see DONE).
+  No alias planned. Users on older scripts may notice.
+
+#### TODO
+
+- [ ] **Man page (kabooz.1).** CLI surface stable post-split
+      and post-features. Ready to write. ~2 hours, one commit.
+      Install script for Termux / Linux / macOS.
+
+- [ ] **Pipeline concurrency (Level 2).** Producer-consumer:
+      prefetch → downloaders → tagger. Overlaps network, disk,
+      CPU. 3-4 hours. Own session.
+
+- [ ] **Chunked download docs polish.** Add explicit caveat that
+      on aggregate-limited networks `-x 4` can be SLOWER than
+      `-x 1` due to TCP slow-start × N.
+
+- [ ] **Cosmetic: lookup_isrc 404 → "no coverage" log message.**
+
+- [ ] **Feature #5 remaining:** quality fine-tuning (constrain
+      max bit depth / sample rate), external_processor shell hook.
