@@ -546,3 +546,9 @@ Stream reporting:
 - TUI playback: always reports start/end
 - kabooz url: silent by default; use --report to opt in (needed
   when piping to a real player, not needed for `xargs curl`)
+
+
+### Chunked downloads
+
+    -x N, --connections N     Byte-range chunks per track
+    --no-chunks               Force single connection even if -x > 1

@@ -261,3 +261,14 @@ Install:
     apt install flac
     # macOS
     brew install flac
+
+
+### Chunked download and bandwidth control
+
+    [download]
+    connections_per_track = 1     # byte-range chunks per track
+    chunk_size_mb = 10            # target chunk size
+    rate_limit_kbps = 0           # aggregate cap, kbps; 0=unlimited
+
+8000 kbps = 1 MB/s = 8 Mbps. Partial .part.N chunks persist
+across runs; interrupted downloads re-fetch only missing chunks.
