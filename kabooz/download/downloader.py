@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shlex
+import threading
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +15,7 @@ import httpx
 from ..models.track import Track
 from ..models.album import Album, Goodie
 from .naming import resolve_track_path, sanitize
+from .rate_limiter import RateLimiter
 
 
 # ── Result objects ─────────────────────────────────────────────────────────
@@ -74,6 +76,37 @@ class AlbumDownloadResult:
 
 # ── Downloader ─────────────────────────────────────────────────────────────
 
+def _plan_chunks(total: int, n: int) -> list[tuple[int, int]]:
+    """Split [0, total-1] into n contiguous (start, end) byte ranges."""
+    if n < 1:
+        n = 1
+    if total <= 0:
+        return [(0, 0)]
+    n = min(n, total)
+    base = total // n
+    ranges = []
+    for i in range(n):
+        start = i * base
+        end = total - 1 if i == n - 1 else start + base - 1
+        ranges.append((start, end))
+    return ranges
+
+
+def _assemble_chunks(chunk_paths: list[Path], dest: Path) -> None:
+    """Concatenate chunk files into dest, then remove them."""
+    tmp = Path(str(dest) + ".tmp")
+    with open(tmp, "wb") as out:
+        for cp in chunk_paths:
+            with open(cp, "rb") as inp:
+                shutil.copyfileobj(inp, out, length=1024 * 1024)
+    tmp.replace(dest)
+    for cp in chunk_paths:
+        try:
+            cp.unlink()
+        except FileNotFoundError:
+            pass
+
+
 class Downloader:
     """
     Downloads audio files and goodies from Qobuz CDN URLs.
@@ -130,6 +163,9 @@ class Downloader:
         external_downloader: str = "",
         naming_template: Optional[str] = None,
         dev: bool = False,
+        connections_per_track: int = 1,
+        chunk_size_mb: int = 10,
+        rate_limit_kbps: int = 0,
     ) -> None:
         self._chunk_size          = chunk_size
         self._read_timeout        = read_timeout
@@ -139,6 +175,9 @@ class Downloader:
         self._external_downloader = external_downloader.strip()
         self._naming_template     = naming_template
         self._dev                 = dev
+        self._connections_per_track = max(1, connections_per_track)
+        self._chunk_size_mb = max(1, chunk_size_mb)
+        self._rate_limiter = RateLimiter(rate_limit_kbps) if rate_limit_kbps > 0 else None
         self._http = http_client or self._make_client()
 
     def _make_client(self) -> httpx.Client:
@@ -158,6 +197,8 @@ class Downloader:
         on_progress: Optional[Callable[[int, int], None]] = None,
         playlist_name: Optional[str] = None,
         playlist_index: Optional[int] = None,
+        connections: Optional[int] = None,
+        no_chunks: bool = False,
     ) -> DownloadResult:
         """
         Download a single track.
@@ -216,6 +257,18 @@ class Downloader:
 
         if self._external_downloader:
             return self._external_download(url, dest_path, on_progress)
+
+        n_conn = connections if connections is not None else self._connections_per_track
+        if n_conn > 1 and not no_chunks and not self._dev:
+            try:
+                return self._download_chunked(url, dest_path, on_progress, n_conn)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (400, 416):
+                    from ..dev import dev_log
+                    dev_log(f"[yellow]chunked: {exc.response.status_code}, fallback[/yellow]")
+                    self._cleanup_chunks(dest_path)
+                    return self._download_to_path(url, dest_path, on_progress)
+                raise
 
         return self._download_to_path(url, dest_path, on_progress)
 
@@ -482,12 +535,107 @@ class Downloader:
                 for chunk in response.iter_bytes(chunk_size=self._chunk_size):
                     f.write(chunk)
                     written += len(chunk)
+                    if self._rate_limiter is not None:
+                        self._rate_limiter.consume(len(chunk))
                     if on_progress:
                         on_progress(part_size + written, total or written)
 
         return DownloadResult(
             path=part_path, bytes_written=written,
             total_bytes=total or written, resumed=resumed,
+        )
+
+    def _cleanup_chunks(self, dest_path: Path) -> None:
+        part_path = Path(str(dest_path) + ".part")
+        for i in range(64):
+            try:
+                Path(f"{part_path}.{i}").unlink()
+            except FileNotFoundError:
+                pass
+
+    def _download_chunked(
+        self, url: str, path: Path,
+        on_progress: Optional[Callable[[int, int], None]], n_conn: int,
+    ) -> DownloadResult:
+        from ..dev import dev_log
+        part_path = Path(str(path) + ".part")
+        if path.exists():
+            size = path.stat().st_size
+            if on_progress:
+                on_progress(size, size)
+            return DownloadResult(path=path, bytes_written=0, total_bytes=size, skipped=True)
+        total = self._head(url)
+        if total == 0:
+            dev_log("[yellow]chunked: no Content-Length, falling back[/yellow]")
+            return self._download_to_path(url, path, on_progress)
+        if part_path.exists() and part_path.stat().st_size == total:
+            return DownloadResult(path=part_path, bytes_written=0, total_bytes=total)
+        ranges = _plan_chunks(total, n_conn)
+        n = len(ranges)
+        chunk_paths = [Path(f"{part_path}.{i}") for i in range(n)]
+        done: set[int] = set()
+        bytes_at_start = 0
+        for i, (start, end) in enumerate(ranges):
+            expected = end - start + 1
+            cp = chunk_paths[i]
+            if cp.exists() and cp.stat().st_size == expected:
+                done.add(i)
+                bytes_at_start += expected
+        dev_log(f"chunked: {len(done)}/{n} pre-complete, {n - len(done)} to download ({n_conn} workers)")
+        chunk_bytes = [0] * n
+        for i in done:
+            start, end = ranges[i]
+            chunk_bytes[i] = end - start + 1
+        progress_lock = threading.Lock()
+
+        def _download_one(idx: int) -> None:
+            start, end = ranges[idx]
+            cp = chunk_paths[idx]
+            expected = end - start + 1
+            existing = cp.stat().st_size if cp.exists() else 0
+            if existing >= expected:
+                return
+            req_start = start + existing
+            headers = {"Range": f"bytes={req_start}-{end}"}
+            mode = "ab" if existing > 0 else "wb"
+            cp.parent.mkdir(parents=True, exist_ok=True)
+            with open(cp, mode) as f:
+                with self._http.stream("GET", url, headers=headers) as response:
+                    response.raise_for_status()
+                    for chunk in response.iter_bytes(chunk_size=self._chunk_size):
+                        f.write(chunk)
+                        if self._rate_limiter is not None:
+                            self._rate_limiter.consume(len(chunk))
+                        with progress_lock:
+                            chunk_bytes[idx] += len(chunk)
+                            if on_progress:
+                                on_progress(sum(chunk_bytes), total)
+
+        last_exc: Optional[Exception] = None
+        for attempt in range(self._max_retries + 1):
+            failed: list[int] = []
+            with ThreadPoolExecutor(max_workers=min(n, n_conn)) as pool:
+                futures = {pool.submit(_download_one, i): i for i in range(n) if i not in done}
+                for fut in as_completed(futures):
+                    idx = futures[fut]
+                    try:
+                        fut.result()
+                        done.add(idx)
+                    except httpx.HTTPStatusError:
+                        raise
+                    except Exception as exc:
+                        last_exc = exc
+                        failed.append(idx)
+            if not failed:
+                break
+            if attempt < self._max_retries:
+                dev_log(f"[yellow]chunked retry {attempt+1}/{self._max_retries}: {len(failed)} failed[/yellow]")
+            else:
+                raise last_exc or httpx.TransportError("chunked download failed")
+        _assemble_chunks(chunk_paths, part_path)
+        return DownloadResult(
+            path=part_path, bytes_written=total - bytes_at_start,
+            total_bytes=total, resumed=bool(done),
         )
 
     def _external_download(
@@ -606,6 +754,8 @@ class Downloader:
                 for chunk in response.iter_bytes(chunk_size=self._chunk_size):
                     f.write(chunk)
                     written += len(chunk)
+                    if self._rate_limiter is not None:
+                        self._rate_limiter.consume(len(chunk))
                     if on_progress:
                         on_progress(existing_size + written, total or written)
 
