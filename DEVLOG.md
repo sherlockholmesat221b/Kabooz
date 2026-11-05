@@ -544,3 +544,219 @@ Remaining from the original seven-feature queue:
 - #5 remaining: quality fine-tuning, external_processor hook
 
 Completed: #1, #3, #4, #7, and #5 partial (cover art sizes).
+
+### 2026-11-04
+**Author**: [sherlockholmesat221b]
+**Commits Made**: c0a65b5..22fe967
+
+#### DONE
+
+**Structural refactors (session split)**
+
+- [x] **session.py split into a package.** Original 1,500-line
+      monolith converted to 10 focused modules under
+      kabooz/session/: \_types, downloads, catalog, streaming,
+      favorites, playlists, account, discovery, backup, plus a thin
+      \_\_init\_\_.py that composes them as mixins on QobuzSession.
+      Each extraction was a script-driven byte-preserving move with
+      pytest verification. Public import path unchanged: from
+      kabooz.session import QobuzSession works identically.
+
+- [x] **cli.py split into a package.** 1,000-line monolith
+      converted to kabooz/cli/ with 12 modules: \_app (Typer app
+      instances + shared state), helpers (console + utilities),
+      downloads, info, auth, search, library, lpl, account, remote,
+      export, plus \_\_init\_\_.py for the main callback and command
+      registration. Same pattern; same verification.
+
+**Feature #7 — ranged album/playlist/artist download**
+
+- [x] `_slice_range(items, *, start=1, end=None, disc=None,
+      warnings_out=None)` helper in session/downloads.py. Pure
+      function, 19 tests in tests/test_session_downloads.py.
+
+- [x] Wired into `download_album`, `download_playlist`, and
+      `download_artist_discography`. on_warning callback threaded
+      from CLI to session; warnings go to stderr.
+
+- [x] CLI flags: `--start`, `--end`, `--disc` (album only),
+      `--no-warnings` on album / playlist / artist.
+
+- [x] Error rules: empty result → ValueError with specific message;
+      start > available → error; end < start → error; end > available
+      → clamped silently + warning; disc 1 on monodisc → warning (no-op);
+      disc 2+ on monodisc → error.
+
+- [x] Verified on real album (Disintegration Deluxe, 3 discs, 44
+      tracks): --disc 5 errors, --end 999 warns then clamps,
+      --disc 2 --start 1 --end 3 downloads exactly 3 tracks from disc 2.
+
+**Feature #2 — stream URL command**
+
+- [x] `StreamingMixin.resolve_stream(track_id, quality, report=False)`
+      in session/streaming.py. Silent by default. report=True opts
+      in to Qobuz reportStreamingStart.
+
+- [x] `kabooz url <id>` command in cli/downloads.py.
+      - Bare URL is default output (1 API call)
+      - `--json` changes format only, not content
+      - `--field NAME` (comma-separated) selects content:
+        URL-only fields (1 call) or metadata fields (2 calls)
+      - `--report` opts in to Qobuz reporting; off by default so
+        scripted `kabooz url | xargs curl` does not pollute analytics
+
+- [x] Verified: bare URL, `--json` (url only), `--field bit_depth`
+      (16), `--field url,bit_depth` (two lines), `--field
+      url,title --json` (JSON object), `--report` (silent success),
+      `--field bogus` (error with field list).
+
+**Feature #6 — FLAC MD5 fix (two attempts)**
+
+- [x] **Attempt 1 (77d3c73, reverted):** called
+      `metaflac --set-md5sum <path>` — WRONG. That flag *writes* an
+      MD5 you supply; it does not *compute* one. The command failed
+      every time. Mocked unit tests passed because they asserted only
+      `returncode`, not the argv. Discovered via real download: MD5
+      came back all zeros.
+
+- [x] **Reverted (49ff1d6, 9417e34).**
+
+- [x] **Salvaged max_retries load_config regression (b38115a).**
+      Feature #3 added `max_retries` to DownloadConfig and
+      validate_config, but never wired the corresponding
+      `d.get("max_retries", ...)` call in load_config. Users
+      setting `download.max_retries=N` in config.toml were silently
+      ignored (always defaulted to 2). One-line fix + regression
+      test in tests/test_downloader.py.
+
+- [x] **Attempt 2 (f97b4a3, correct):** `flac -ds --stdout ... |
+      hashlib.md5 | metaflac --set-md5sum=<hash>`. Fail-fast
+      ConfigError if flac / metaflac missing (better than silent skip
+      when the user has explicitly opted in). Verified on a real
+      Lovesong FLAC: MD5 = a3dcc342..., `flac -t` passes.
+
+**Testing infrastructure**
+
+- [x] pytest integration marker added: `@pytest.mark.integration`.
+      `pyproject.toml` `addopts = "-v -m 'not integration'"` so the
+      default `pytest` run skips them. Opt in with
+      `pytest -m integration` or run everything with `pytest -m ''`.
+
+- [x] First integration test in tests/test_flac_md5.py
+      (test_real_flac_md5_fix): generates a real FLAC, zeros its MD5,
+      runs the fix, verifies MD5 is non-zero and `flac -t` passes.
+      Skipped by default; requires flac + metaflac + ffmpeg.
+
+**Performance**
+
+- [x] Lazy imports: Tagger, lookup_isrc, apply_mb_tags, fetch_lyrics
+      are now imported inside `_post_download` rather than at module
+      top. LocalStore construction deferred to a `store` property.
+
+- [x] Measured: small / no visible improvement because the remaining
+      ~3.5s startup is dominated by Typer / Rich / httpx (structural,
+      not fixable by lazy imports). Fix kept for hygiene — commands
+      that never touch the store or the tagging pipeline no longer
+      pay their cost.
+
+**Cosmetic**
+
+- [x] Error prefix cleanup: session layer no longer wraps
+      `_slice_range` ValueError with `"Cannot download album: {exc}"`.
+      CLI output is now `"Invalid range: disc 5 not found in collection"`
+      instead of `"Invalid range: Cannot download album: disc 5 not found in collection"`.
+
+#### NOTES
+
+**Multi-attempt feature #6 lesson.** First attempt failed because I
+assumed `metaflac --set-md5sum` computes the MD5. It does not — it
+writes an arbitrary hex string. The mocked unit tests passed because
+they asserted `returncode == 0`, not the actual argv passed to
+subprocess. This is the exact class of bug that mocked tests miss.
+Fix: for any external-tool invocation, tests must assert the argv
+matches the tool's actual API (both shape and content), not just the
+result. The correct attempt's unit tests do this: they assert
+`argv[0] == "metaflac"`, `argv[1].startswith("--set-md5sum=")`,
+the hex digest is 32 chars lowercase hex, and the file path is the
+last argument. If that assertion had existed in attempt 1, the bug
+would have been caught at test time instead of at download time.
+
+**Fail-fast design principle.** If the user enables
+`fix_flac_md5 = true` but flac / metaflac is missing, the download
+now raises ConfigError rather than silently skipping. The user
+opted in; they should know immediately that the tool cannot do what
+they asked. Silent skip hides a broken feature — exactly what
+happened with attempt 1.
+
+**Session and CLI split paid off.** All of this session's feature
+work — #7, #2, #6 — stayed confined to a single small file per
+feature. Feature #7 edits touched session/downloads.py and
+cli/downloads.py. Feature #2 added one method (session/streaming.py)
+and one command (cli/downloads.py). Feature #6 touched config.py +
+session/downloads.py. None of them required editing a >600 line file.
+The splits were worth the day they took.
+
+**Integration test infrastructure is the answer to the "mocks that
+pass but the code is broken" problem.** First integration test
+landed today (test_real_flac_md5_fix). Future integration tests
+can cover: live Qobuz API (auth, get_track/album, signed URL),
+real downloads with real tags, MusicBrainz enrichment against
+the real API. Those go in tests/integration/ and are run with
+`pytest -m integration`. Default `pytest` stays fast and hermetic.
+
+#### BUGS
+
+- **max_workers / -j is a no-op for all CLI download commands.**
+  Same as before. This is the next priority.
+
+  `session.download_album`, `download_playlist`,
+  `download_artist_discography`, `download_favorites`,
+  `download_purchases` each implement their own sequential for-loop
+  and never call `Downloader.download_album` (the only method that
+  reads `self._max_workers`). Setting `download.max_workers = 8` or
+  `-j 8` has no observable effect.
+
+  Fix scope: parallelise the per-track loop via ThreadPoolExecutor
+  in each method. Rich progress and SQLite WAL are thread-safe;
+  mutagen is per-file so no shared state. Estimated 60-90 minutes.
+  Expected 3-5x speedup on multi-track albums.
+
+- **lookup_isrc logs 404 as error.** Cosmetic, still deferred.
+
+- **Network TLS block for musicbrainz.org on mobile data.** Not a
+  Kabooz bug; VPN resolves.
+
+#### TODO
+
+- [ ] **max_workers / -j fix (Level 1 concurrency).** Highest
+      priority. Parallel track downloads via ThreadPoolExecutor.
+      Affects all 5 download commands. ~60-90 min.
+
+- [ ] **Pipeline architecture (Level 2 concurrency).** After
+      max_workers. Producer-consumer: metadata prefetch thread →
+      downloader workers → tagger thread. Overlaps network I/O
+      with tagging/MD5/lyrics/MB. ~3-4 hours.
+
+- [ ] **Async rewrite (Level 3).** NOT RECOMMENDED. Async pays off
+      for thousands of concurrent connections, not for 4-8 album
+      tracks. Threading (Level 1 + 2) gives equivalent throughput
+      with simpler code. Revisit only if profiling shows threading
+      is the bottleneck.
+
+- [ ] **Man page for kabooz.** Long-deferred. The CLI structure is
+      now stable post-split, so this can proceed whenever.
+
+- [ ] **Cosmetic: lookup_isrc 404 → "no coverage" log message.**
+
+#### FEATURES remaining
+
+- [ ] **#5 remaining:** quality fine-tuning (constrain max bit depth
+      / sample rate), `external_processor` shell hook.
+
+- **Dropped:** favorites / purchases ranged download. Users who
+      need it can call `_slice_range` directly or wrap the returned
+      list themselves. Adding CLI flags for these two commands adds
+      surface area without proportionate value.
+
+- **Deferred:** MP4-DASH lyrics discovery (Tampermonkey capture
+      approach; needs a separate session).
