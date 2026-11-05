@@ -380,6 +380,7 @@ class DownloadsMixin:
         sidecar_size:      Optional[str]              = None,
         on_progress:       Optional[ProgressCallback] = None,
         workers:           Optional[int]              = None,
+        connections:     Optional[int]    = None,
         external_downloader: Optional[str]            = None,
     ) -> TrackDownloadResult:
         cfg = self.config
@@ -396,6 +397,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_workers=n_work,
             max_retries=cfg.download.max_retries,
             external_downloader=ext_dl,
@@ -405,6 +409,7 @@ class DownloadsMixin:
             result = dl.download_track(
                 track=track_obj, url_info=url_info,
                 dest_dir=dest, album=None, on_progress=on_progress,
+                connections=connections,
             )
 
         return self._post_download(
@@ -437,6 +442,7 @@ class DownloadsMixin:
         on_track_fail:     Optional[TrackFailCallback]  = None,
         on_progress:       Optional[ProgressCallback]   = None,
         workers:           Optional[int]                = None,
+        connections:     Optional[int]    = None,
         external_downloader: Optional[str]              = None,
     ) -> AlbumDownloadResult:
         from ..dev import dev_log
@@ -484,6 +490,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_workers=n_work,
             max_retries=cfg.download.max_retries,
             external_downloader=ext_dl,
@@ -517,6 +526,7 @@ class DownloadsMixin:
                     dl_result = dl.download_track(
                         track=track_obj, url_info=url_info,
                         dest_dir=dest, album=album_obj, on_progress=on_progress,
+                        connections=connections,
                     )
                 except Exception as exc:
                     dev_log(f"[red]track {track_obj.id} download error: {exc}[/red]")
@@ -641,6 +651,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_retries=cfg.download.max_retries,
             dev=self._dev,
         ) as dl:
@@ -679,6 +692,7 @@ class DownloadsMixin:
         on_track_done:  Optional[TrackDoneCallback]  = None,
         on_track_fail:  Optional[TrackFailCallback]  = None,
         workers:        Optional[int]    = None,
+        connections:     Optional[int]    = None,
         cover_size:     Optional[str]    = None,
         sidecar_size:   Optional[str]    = None,
         start:          int              = 1,
@@ -778,6 +792,7 @@ class DownloadsMixin:
                     on_track_done=on_track_done,
                     on_track_fail=on_track_fail,
                     workers=workers,
+                    connections=connections,
                 )
                 results.append(agg)
             except NotStreamableError:
@@ -811,6 +826,7 @@ class DownloadsMixin:
         on_track_fail:     Optional[TrackFailCallback]  = None,
         on_progress:       Optional[ProgressCallback]   = None,
         workers:           Optional[int]     = None,
+        connections:     Optional[int]    = None,
         external_downloader: Optional[str]   = None,
         write_m3u:         bool              = False,
     ) -> PlaylistDownloadResult:
@@ -848,6 +864,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_workers=n_work,
             max_retries=cfg.download.max_retries,
             external_downloader=ext_dl,
@@ -879,6 +898,7 @@ class DownloadsMixin:
                         track=track_obj, url_info=url_info,
                         dest_dir=dest, album=None, on_progress=on_progress,
                         playlist_name=pl.name, playlist_index=original_pos,
+                        connections=connections,
                     )
                 except Exception as exc:
                     _reason = f"{type(exc).__name__}: {exc}"
@@ -917,6 +937,7 @@ class DownloadsMixin:
         on_track_start: Optional[TrackStartCallback] = None,
         on_track_done:  Optional[TrackDoneCallback]  = None,
         workers:        Optional[int]     = None,
+        connections:     Optional[int]    = None,
         cover_size:     Optional[str]     = None,
         sidecar_size:   Optional[str]     = None,
     ) -> PlaylistDownloadResult:
@@ -939,6 +960,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_workers=n_work,
             max_retries=cfg.download.max_retries,
             naming_template=tmpl,
@@ -957,6 +981,7 @@ class DownloadsMixin:
                         track=track_obj, url_info=url_info,
                         dest_dir=dest, album=None,
                         playlist_name=pl["name"], playlist_index=i,
+                        connections=connections,
                     )
                 except Exception:
                     agg.failed += 1; continue
@@ -981,6 +1006,7 @@ class DownloadsMixin:
         on_track_start:    Optional[TrackStartCallback]  = None,
         on_track_done:     Optional[TrackDoneCallback]   = None,
         workers:           Optional[int]                 = None,
+        connections:     Optional[int]    = None,
     ) -> PlaylistDownloadResult:
         cfg  = self.config
         q    = quality or _parse_quality(cfg.download.quality)
@@ -1007,6 +1033,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_workers=workers or cfg.download.max_workers,
             max_retries=cfg.download.max_retries,
             naming_template=cfg.naming.single,
@@ -1021,6 +1050,7 @@ class DownloadsMixin:
                     url_info  = self.client.get_track_url(str(track_obj.id), quality=q)
                     dl_result = dl.download_track(
                         track=track_obj, url_info=url_info, dest_dir=dest, album=None,
+                        connections=connections,
                     )
                 except Exception as exc:
                     agg.failed.append(f"{getattr(track_obj, 'display_title', '?')} — {exc}"); continue
@@ -1040,6 +1070,7 @@ class DownloadsMixin:
         on_track_start: Optional[TrackStartCallback] = None,
         on_track_done:  Optional[TrackDoneCallback]  = None,
         workers:        Optional[int]    = None,
+        connections:     Optional[int]    = None,
         cover_size:     Optional[str]    = None,
         sidecar_size:   Optional[str]    = None,
     ) -> PlaylistDownloadResult:
@@ -1067,6 +1098,9 @@ class DownloadsMixin:
         with Downloader(
             read_timeout=cfg.download.read_timeout,
             connect_timeout=cfg.download.connect_timeout,
+            connections_per_track=cfg.download.connections_per_track,
+            chunk_size_mb=cfg.download.chunk_size_mb,
+            rate_limit_kbps=cfg.download.rate_limit_kbps,
             max_workers=workers or cfg.download.max_workers,
             max_retries=cfg.download.max_retries,
             naming_template=cfg.naming.single,
@@ -1083,6 +1117,7 @@ class DownloadsMixin:
                     url_info  = self.client.get_track_url(str(track_obj.id), quality=q)
                     dl_result = dl.download_track(
                         track=track_obj, url_info=url_info, dest_dir=dest, album=None,
+                        connections=connections,
                     )
                 except Exception as exc:
                     agg.failed.append(f"{getattr(track_obj, 'display_title', '?')} — {exc}"); continue
